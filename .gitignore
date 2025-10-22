@@ -1,0 +1,35 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+credentials.json
+
+# Python cache and artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Logs and debug
+logs/
+*.log
+debug_*.py
+debug_output.txt
+test_results.txt
+temp_*.py
+
+# Local IDE/editor settings
+.vscode/
+.idea/
+.DS_Store
+
+# Generated/local data files
+bewerbungen_tracking.csv
+bewerbungsvorlagen.txt
+anschreiben_sammlung.txt
+
+# Personal documents
+*.pdf
+*.doc
+*.docx
+*.xlsx
+
