@@ -1,7 +1,7 @@
 ﻿"""Direkt-Job-Finder: Ã–ffnet relevante Jobportale, pflegt Vorlagen und Tracking.
 
 Fokus: IT-Support/Workplace/Onsite/Rollout + passende Lager/Logistikrollen
-im Raum BÃ¼lach/Kloten/ZÃ¼rich (Ã–V â‰¤ 60 Min.). UTFâ€‘8 bereinigt.
+im Raum Bülach/Kloten/Zürich (ÖV â‰¤ 60 Min.). UTF-8 bereinigt.
 """
 
 import webbrowser
@@ -38,7 +38,7 @@ class DirectJobFinder:
 
     # ------------------ Datei-Helfer ------------------
     def save_application_templates(self):
-        """Schreibt optimierte Anschreiben-Vorlagen (IT + Logistik) nach UTFâ€‘8."""
+        """Schreibt optimierte Anschreiben-Vorlagen (IT + Logistik) nach UTF-8."""
         name = (self.profile.get("name") or "Ihr Name").strip()
         templates = f"""
 {name.upper()} – BEWERBUNGSVORLAGEN
@@ -59,7 +59,7 @@ StÃ¤rken:
 â€¢ Basis Netzwerk (TCP/IP, VLAN) und Remote-Support
 â€¢ Strukturierte Dokumentation und Teamarbeit
 
-Gern unterstÃ¼tze ich Ihr Team vor Ort im Raum BÃ¼lach/ZÃ¼rich. Beginn: ab sofort.
+Gern unterstÃ¼tze ich Ihr Team vor Ort im Raum Bülach/Zürich. Beginn: ab sofort.
 
 Mit freundlichen GrÃ¼ÃŸen
 {name}
@@ -69,7 +69,7 @@ ANSCHREIBEN: ONSITE / FIELD SERVICE / ROLLOUT
 ============================================================
 Sehr geehrte Damen und Herren,
 
-ich bewerbe mich fÃ¼r eine Position im Onsite-/Field-Service. Ich arbeite sorgfÃ¤ltig, kundenorientiert und zuverlÃ¤ssig, auch im Schichtbetrieb. Aufgaben wie GerÃ¤tevorbereitung/Imaging, Arbeitsplatzaufbau, Peripherie, Migrationen und Vor-Ort-Support setze ich strukturiert um. Ã–ffentliche Verkehrsmittel nutze ich flexibel im Raum BÃ¼lach/ZÃ¼rich (Fahrzeit < 60 Min.).
+ich bewerbe mich fÃ¼r eine Position im Onsite-/Field-Service. Ich arbeite sorgfÃ¤ltig, kundenorientiert und zuverlÃ¤ssig, auch im Schichtbetrieb. Aufgaben wie GerÃ¤tevorbereitung/Imaging, Arbeitsplatzaufbau, Peripherie, Migrationen und Vor-Ort-Support setze ich strukturiert um. Ã–ffentliche Verkehrsmittel nutze ich flexibel im Raum Bülach/Zürich (Fahrzeit < 60 Min.).
 
 Mit freundlichen GrÃ¼ÃŸen
 {name}
@@ -99,7 +99,7 @@ ANSCHREIBEN: LAGER / LOGISTIK (Fachkraft Lagerlogistik)
 ============================================================
 Sehr geehrte Damen und Herren,
 
-ich bewerbe mich als Fachkraft fÃ¼r Lagerlogistik. Ich bringe Erfahrung in Wareneingang/-ausgang, Kommissionierung, Milkrun, Gefahrgut, Inventur und SAP-Buchungen mit. Ich arbeite prÃ¤zise, zuverlÃ¤ssig und teamorientiert â€“ Schichtarbeit ist in Ordnung. Einsatzort bevorzugt BÃ¼lach/ZÃ¼rich, Anfahrt mit Ã–V.
+ich bewerbe mich als Fachkraft fÃ¼r Lagerlogistik. Ich bringe Erfahrung in Wareneingang/-ausgang, Kommissionierung, Milkrun, Gefahrgut, Inventur und SAP-Buchungen mit. Ich arbeite prÃ¤zise, zuverlÃ¤ssig und teamorientiert â€“ Schichtarbeit ist in Ordnung. Einsatzort bevorzugt Bülach/Zürich, Anfahrt mit ÖV.
 
 Mit freundlichen GrÃ¼ÃŸen
 {name}
@@ -107,17 +107,17 @@ Mit freundlichen GrÃ¼ÃŸen
 
         # Entferne harte NamenseintrÃ¤ge zugunsten des Profils
 
-        with open("bewerbungsvorlagen.txt", "w", encoding="utf-8") as f:
+        with open(config.TEMPLATES_FILE, "w", encoding="utf-8") as f:
             f.write(templates)
-        print("Bewerbungsvorlagen aktualisiert (UTFâ€‘8)")
+        print("Bewerbungsvorlagen aktualisiert (UTF-8)")
 
     def create_job_tracking_sheet(self):
         """Erstellt Tracking-CSV, falls nicht vorhanden."""
-        if os.path.exists("bewerbungen_tracking.csv"):
+        if os.path.exists(config.TRACKING_FILE):
             return
         header = "Datum,Unternehmen,Position,Portal,Link,Status,Notizen"
         example = f"{datetime.now().strftime('%Y-%m-%d')},Beispiel AG,IT Support,JobScout24,https://example.com,Vorbereitet,Anschreiben anpassen"
-        with open("bewerbungen_tracking.csv", "w", encoding="utf-8") as f:
+        with open(config.TRACKING_FILE, "w", encoding="utf-8") as f:
             f.write(header + "\n")
             f.write(example + "\n")
         print("Tracking-Sheet erstellt: bewerbungen_tracking.csv")
@@ -139,10 +139,10 @@ Mit freundlichen GrÃ¼ÃŸen
         logging.info(f"Automatische Job-Suche gestartet: {datetime.now()}")
 
         # Dateien prÃ¼fen/erstellen
-        if not os.path.exists("bewerbungsvorlagen.txt"):
+        if not os.path.exists(config.TEMPLATES_FILE):
             print("Erstelle Bewerbungsvorlagenâ€¦")
             self.save_application_templates()
-        if not os.path.exists("bewerbungen_tracking.csv"):
+        if not os.path.exists(config.TRACKING_FILE):
             print("Erstelle Tracking-Sheetâ€¦")
             self.create_job_tracking_sheet()
 
@@ -175,10 +175,10 @@ Mit freundlichen GrÃ¼ÃŸen
         print("AKTUALISIERE JOB-SUCHE!")
         print("=" * 60)
 
-        if not os.path.exists("bewerbungsvorlagen.txt"):
+        if not os.path.exists(config.TEMPLATES_FILE):
             print("Erstelle Bewerbungsvorlagenâ€¦")
             self.save_application_templates()
-        if not os.path.exists("bewerbungen_tracking.csv"):
+        if not os.path.exists(config.TRACKING_FILE):
             print("Erstelle Tracking-Sheetâ€¦")
             self.create_job_tracking_sheet()
 
@@ -207,7 +207,7 @@ Mit freundlichen GrÃ¼ÃŸen
                 print(f"{desc}: {url}")
 
         print("\nOPTIMIERTE PARAMETER:")
-        print("- Region: BÃ¼lach/Kloten/ZÃ¼rich, Radius â‰¤ 25 km")
+        print("- Region: Bülach/Kloten/Zürich, Radius â‰¤ 25 km")
         print("- Filter: ohne Senior/Lead/Bachelor/Master")
         print("- Sprachen: Deutsch (sehr gut), Englisch (B2)")
 

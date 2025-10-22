@@ -1,4 +1,4 @@
-import smtplib
+﻿import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -21,6 +21,8 @@ class EmailAutomation:
         """Send alert for new job opportunities"""
         if not new_jobs:
             return
+        if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
+            return False
 
         subject = f"Neue Job-Möglichkeiten gefunden ({len(new_jobs)} Stellen)"
         body = self._create_job_alert_body(new_jobs)
@@ -29,6 +31,10 @@ class EmailAutomation:
 
     def send_weekly_summary(self, stats):
         """Send weekly summary of job search activities"""
+        if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
+            return False
+        if not getattr(config, "WEEKLY_SUMMARY_ENABLED", True):
+            return False
         subject = f"Wöchentliche Job-Suche Zusammenfassung - {datetime.now().strftime('%W/%Y')}"
         body = self._create_weekly_summary_body(stats)
 
@@ -36,6 +42,10 @@ class EmailAutomation:
 
     def send_error_notification(self, error_type, error_message, traceback=None):
         """Send notification for critical errors"""
+        if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
+            return False
+        if not getattr(config, "ERROR_NOTIFICATIONS_ENABLED", True):
+            return False
         subject = f"Job-Finder Fehler: {error_type}"
         body = self._create_error_body(error_type, error_message, traceback)
 
@@ -117,6 +127,9 @@ class EmailAutomation:
 
     def _send_email(self, subject, body, priority="normal", attachment=None):
         """Send email with optional attachment"""
+        if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
+            job_logger.info("Email sending skipped: disabled via EMAIL_NOTIFICATIONS_ENABLED")
+            return False
         try:
             msg = MIMEMultipart()
             msg['From'] = self.sender_email

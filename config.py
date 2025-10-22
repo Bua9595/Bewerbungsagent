@@ -138,6 +138,11 @@ class Config:
         self.PROFILE_NAME = os.getenv("PROFILE_NAME", self.PROFILE_NAME)
         self.PROFILE_EMAIL = os.getenv("PROFILE_EMAIL", self.PROFILE_EMAIL)
         self.PROFILE_LINKEDIN = os.getenv("PROFILE_LINKEDIN", self.PROFILE_LINKEDIN)
+        # optional, falls vorhanden
+        self.PROFILE_PHONE = os.getenv("PROFILE_PHONE", getattr(self, "PROFILE_PHONE", ""))
+
+        # Logging aus ENV
+        self.LOG_LEVEL = os.getenv("LOG_LEVEL", self.LOG_LEVEL)
 
         # SMTP
         env_smtp_server = os.getenv("SMTP_SERVER")
@@ -188,6 +193,23 @@ class Config:
                 self.LOCATION_RADIUS_KM = int(radius)
             except ValueError:
                 pass
+
+        # Feature-Toggles
+        def _env_bool(key, default):
+            val = os.getenv(key)
+            if val is None:
+                return default
+            return str(val).strip().lower() in {"1", "true", "t", "yes", "y", "ja", "j"}
+
+        self.EMAIL_NOTIFICATIONS_ENABLED = _env_bool(
+            "EMAIL_NOTIFICATIONS_ENABLED", getattr(self, "EMAIL_NOTIFICATIONS_ENABLED", True)
+        )
+        self.WEEKLY_SUMMARY_ENABLED = _env_bool(
+            "WEEKLY_SUMMARY_ENABLED", getattr(self, "WEEKLY_SUMMARY_ENABLED", True)
+        )
+        self.ERROR_NOTIFICATIONS_ENABLED = _env_bool(
+            "ERROR_NOTIFICATIONS_ENABLED", getattr(self, "ERROR_NOTIFICATIONS_ENABLED", True)
+        )
 
     def validate_config(self):
         """Validiert die Konfiguration (Minimalanforderungen)."""
