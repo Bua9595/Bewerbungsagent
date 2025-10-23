@@ -92,3 +92,6 @@ Nicht-sensible ENV für Jobliste/Scoring:
 WhatsApp Cloud API (optional; Standard: aus):
 - `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
   – Wird nur genutzt, wenn aktiviert; ist kein Ersatz für E‑Mail.
+
+Portale/Adapter steuern:
+- `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` – Komma‑Liste; leer bedeutet alle aktiv

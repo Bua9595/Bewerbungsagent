@@ -14,6 +14,8 @@ from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
 from config import config
+from logger import job_logger
+from job_adapters_ch import JobsChAdapter, JobupAdapter, JobRow as CHJobRow
 from job_query_builder import build_search_urls
 
 
@@ -73,6 +75,7 @@ MIN_SCORE_MAIL = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
 LOCATION_BOOST_KM = int(os.getenv("LOCATION_BOOST_KM", "15") or 15)
 BLACKLIST = {x.strip().lower() for x in (os.getenv("BLACKLIST_COMPANIES", "") or "").split(",") if x.strip()}
 KEYWORD_BLACKLIST = {x.strip().lower() for x in (os.getenv("BLACKLIST_KEYWORDS", "") or "").split(",") if x.strip()}
+ENABLED_SOURCES = {x.strip().lower() for x in (os.getenv("ENABLED_SOURCES", "") or "").split(",") if x.strip()}
 
 
 def _location_boost(job_location: str, search_locations: List[str]) -> int:
@@ -117,20 +120,47 @@ def _collect_indeed(driver, url: str, limit: int = 25) -> List[Job]:
 
 def collect_jobs(limit_per_site: int = 25, max_total: int = 100) -> List[Job]:
     urls = build_search_urls(config)
-    # Wir starten pragmatisch nur mit Indeed. Weitere Portale können folgen.
     indeed_url = None
     for k, v in urls.items():
         if "indeed" in k.lower() or "indeed" in v.lower():
             indeed_url = v
             break
 
+    # Query/Location für Adapter (pragmatisch: jeweils erstes Element)
+    base_keywords = getattr(config, 'SEARCH_KEYWORDS', ["IT Support"]) or ["IT Support"]
+    locations = getattr(config, 'SEARCH_LOCATIONS', ["Zürich"]) or ["Zürich"]
+    query = base_keywords[0]
+    location = locations[0]
+    radius_km = getattr(config, 'LOCATION_RADIUS_KM', 25)
+
     all_jobs: List[Job] = []
-    if indeed_url:
-        driver = _mk_driver(headless=getattr(config, "HEADLESS_MODE", True))
+    driver = _mk_driver(headless=getattr(config, "HEADLESS_MODE", True))
+    try:
+        # Indeed (sofern aktiviert oder keine Einschränkung)
+        if indeed_url and (not ENABLED_SOURCES or 'indeed' in ENABLED_SOURCES):
+            try:
+                all_jobs.extend(_collect_indeed(driver, indeed_url, limit=limit_per_site))
+            except Exception as e:
+                job_logger.warning(f"Indeed Adapter Fehler: {e}")
+
+        # CH-Adapter
+        adapters = [JobsChAdapter(), JobupAdapter()]
+        for a in adapters:
+            if ENABLED_SOURCES and a.source.lower() not in ENABLED_SOURCES:
+                continue
+            try:
+                rows = a.search(driver, query=query, location=location, radius_km=radius_km, limit=limit_per_site)
+                # in Job umwandeln
+                for r in rows:
+                    if isinstance(r, CHJobRow):
+                        all_jobs.append(Job(title=r.title, company=r.company, location=r.location, link=r.link, source=a.source))
+            except Exception as e:
+                job_logger.warning(f"Adapter {a.source} Fehler: {e}")
+    finally:
         try:
-            all_jobs.extend(_collect_indeed(driver, indeed_url, limit=limit_per_site))
-        finally:
             driver.quit()
+        except Exception:
+            pass
 
     # Dedupe/Blacklist + Location-Boost
     seen = set()
