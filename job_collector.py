@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import List, Dict, Tuple
+from typing import List, Tuple
+import os
+import csv
+import re
+from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -22,6 +26,7 @@ class Job:
     source: str
     score: int = 0
     match: str = "unknown"  # exact | good | weak | unknown
+    date: str = ""
 
 
 def _mk_driver(headless: bool = True):
@@ -58,6 +63,27 @@ def _score_title(title: str) -> Tuple[int, str]:
         label = "weak"
 
     return score, label
+
+
+# ----- ENV/Scoring Hilfen -----
+TRUTHY = {"1", "true", "t", "y", "yes", "ja", "j"}
+EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
+MIN_SCORE_MAIL = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
+LOCATION_BOOST_KM = int(os.getenv("LOCATION_BOOST_KM", "15") or 15)
+BLACKLIST = {x.strip().lower() for x in (os.getenv("BLACKLIST_COMPANIES", "") or "").split(",") if x.strip()}
+
+
+def _location_boost(job_location: str, search_locations: List[str]) -> int:
+    # Pragmatismus: String-Match statt Geocoding (KM-Wert dient nur als ENV-Schwellensymbol)
+    jl = (job_location or "").lower()
+    return 1 if any(loc.lower() in jl for loc in search_locations or []) else 0
+
+
+def _norm_key(title: str, company: str, link: str) -> str:
+    t = re.sub(r"\W+", "", (title or "").lower())
+    c = re.sub(r"\W+", "", (company or "").lower())
+    l = re.sub(r"[?#].*$", "", (link or "").lower())
+    return f"{t}|{c}|{l}"
 
 
 def _collect_indeed(driver, url: str, limit: int = 25) -> List[Job]:
@@ -98,20 +124,32 @@ def collect_jobs(limit_per_site: int = 25, max_total: int = 100) -> List[Job]:
 
     all_jobs: List[Job] = []
     if indeed_url:
-        driver = _mk_driver(headless=True)
+        driver = _mk_driver(headless=getattr(config, "HEADLESS_MODE", True))
         try:
             all_jobs.extend(_collect_indeed(driver, indeed_url, limit=limit_per_site))
         finally:
             driver.quit()
 
-    # Deduplizieren per Link
+    # Dedupe/Blacklist + Location-Boost
     seen = set()
     unique: List[Job] = []
+    search_locs = getattr(config, "SEARCH_LOCATIONS", []) or []
     for j in all_jobs:
-        key = j.link or (j.title, j.company)
+        if (j.company or "").lower() in BLACKLIST:
+            continue
+        key = _norm_key(j.title, j.company, j.link)
         if key in seen:
             continue
         seen.add(key)
+        # Boost
+        j.score += _location_boost(j.location, search_locs)
+        # Re‑klassifizieren
+        if j.score >= 20:  # sehr starke Titel + Boost
+            j.match = "exact"
+        elif j.score >= 10:
+            j.match = "good"
+        else:
+            j.match = j.match or "weak"
         unique.append(j)
 
     # Nach Score sortieren
@@ -125,3 +163,13 @@ def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:
         out.append(f"{i:02d}. [{j.match:^5}] {j.title} — {j.company} — {j.location}\n    {j.link}")
     return "\n".join(out) if out else "Keine Treffer."
 
+
+def export_csv(rows: List[Job], path: str = "generated/jobs_latest.csv") -> None:
+    if not EXPORT_CSV:
+        return
+    Path("generated").mkdir(exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(["title", "company", "location", "match", "score", "link", "source"])
+        for j in rows:
+            w.writerow([j.title, j.company, j.location, j.match, j.score, j.link, j.source])

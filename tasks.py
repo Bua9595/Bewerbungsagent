@@ -79,19 +79,38 @@ def main(argv=None):
     elif args.cmd == "email-test":
         cmd_email_test()
     elif args.cmd == "list":
-        from job_collector import collect_jobs, format_jobs_plain
+        from job_collector import collect_jobs, format_jobs_plain, export_csv
         jobs = collect_jobs()
+        export_csv(jobs)
         print(format_jobs_plain(jobs))
     elif args.cmd == "mail-list":
-        from job_collector import collect_jobs
+        from job_collector import collect_jobs, export_csv
         from email_automation import EmailAutomation
-        jobs = [
-            {"title": j.title, "company": j.company, "location": j.location, "link": j.link}
-            for j in collect_jobs()
-            if j.match in {"exact", "good"}
+        import os
+        try:
+            from notifier_whatsapp import send_whatsapp
+        except Exception:
+            def send_whatsapp(_txt: str) -> bool:
+                return False
+
+        min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
+        rows = collect_jobs()
+        # Filter für Mail: mind. good/exact und Score-Schwelle
+        filtered = [r for r in rows if r.match in {"exact", "good"} and r.score >= min_score]
+        export_csv(filtered)
+
+        jobs_payload = [
+            {"title": r.title, "company": r.company, "location": r.location, "link": r.link}
+            for r in filtered
         ]
-        ok = EmailAutomation().send_job_alert(jobs)
+        ok = EmailAutomation().send_job_alert(jobs_payload)
         print("E-Mail gesendet" if ok else "E-Mail nicht gesendet (deaktiviert oder Fehler)")
+
+        # Optionaler WhatsApp-Hinweis (no-op wenn deaktiviert)
+        try:
+            send_whatsapp(f"[Bewerbungsagent] {len(filtered)} Treffer gesendet.")
+        except Exception as e:
+            print(f"WhatsApp Hinweis fehlgeschlagen: {e}")
 
 
 if __name__ == "__main__":

@@ -26,10 +26,10 @@ temp_*.py
 bewerbungen_tracking.csv
 bewerbungsvorlagen.txt
 anschreiben_sammlung.txt
+generated/
 
 # Personal documents
 *.pdf
 *.doc
 *.docx
 *.xlsx
-

@@ -49,6 +49,8 @@ python tasks.py open             # Öffnet Portale direkt
 python tasks.py env-check        # Zeigt Konfig-Zusammenfassung (ohne Geheimnisse)
 python tasks.py gen-templates    # Schreibt Vorlagen/Tracking-Datei
 python tasks.py email-test       # Verbindungs-Test (SMTP) – optional
+python tasks.py list             # Jobs sammeln, sortiert anzeigen (+ CSV Export)
+python tasks.py mail-list        # Gefilterte Liste per E-Mail senden (+ CSV, optional WhatsApp)
 ```
 
 ## Warum App‑Passwort/OAuth?
@@ -77,3 +79,14 @@ python tasks.py email-test       # Verbindungs-Test (SMTP) – optional
 ## Lizenz / Hinweise
 - Nur zu Demo-/Privatzwecken. Webseitenbedingungen der Portale beachten.
 
+## Erweiterte Einstellungen (optional)
+
+Nicht-sensible ENV für Jobliste/Scoring:
+- `EXPORT_CSV=true` – exportiert Treffer nach `generated/jobs_latest.csv`
+- `MIN_SCORE_MAIL=2` – Mindestscore für E-Mail-Versand
+- `LOCATION_BOOST_KM=15` – heuristischer Boost (String-Match Location)
+- `BLACKLIST_COMPANIES=` – Komma‑getrennte Firmen, die ignoriert werden
+
+WhatsApp Cloud API (optional; Standard: aus):
+- `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
+  – Wird nur genutzt, wenn aktiviert; ist kein Ersatz für E‑Mail.
