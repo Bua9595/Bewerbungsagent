@@ -83,9 +83,11 @@ python tasks.py mail-list        # Gefilterte Liste per E-Mail senden (+ CSV, op
 
 Nicht-sensible ENV für Jobliste/Scoring:
 - `EXPORT_CSV=true` – exportiert Treffer nach `generated/jobs_latest.csv`
+- `EXPORT_CSV_PATH=generated/jobs_latest.csv` – Zielpfad für CSV-Export
 - `MIN_SCORE_MAIL=2` – Mindestscore für E-Mail-Versand
 - `LOCATION_BOOST_KM=15` – heuristischer Boost (String-Match Location)
 - `BLACKLIST_COMPANIES=` – Komma‑getrennte Firmen, die ignoriert werden
+- `BLACKLIST_KEYWORDS=junior` – Titel‑Keywords, die ausgeschlossen werden (z. B. "junior,praktikum")
 
 WhatsApp Cloud API (optional; Standard: aus):
 - `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`

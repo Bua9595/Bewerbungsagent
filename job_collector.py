@@ -68,9 +68,11 @@ def _score_title(title: str) -> Tuple[int, str]:
 # ----- ENV/Scoring Hilfen -----
 TRUTHY = {"1", "true", "t", "y", "yes", "ja", "j"}
 EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
+EXPORT_CSV_PATH = os.getenv("EXPORT_CSV_PATH", "generated/jobs_latest.csv")
 MIN_SCORE_MAIL = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
 LOCATION_BOOST_KM = int(os.getenv("LOCATION_BOOST_KM", "15") or 15)
 BLACKLIST = {x.strip().lower() for x in (os.getenv("BLACKLIST_COMPANIES", "") or "").split(",") if x.strip()}
+KEYWORD_BLACKLIST = {x.strip().lower() for x in (os.getenv("BLACKLIST_KEYWORDS", "") or "").split(",") if x.strip()}
 
 
 def _location_boost(job_location: str, search_locations: List[str]) -> int:
@@ -137,6 +139,8 @@ def collect_jobs(limit_per_site: int = 25, max_total: int = 100) -> List[Job]:
     for j in all_jobs:
         if (j.company or "").lower() in BLACKLIST:
             continue
+        if any(k in (j.title or "").lower() for k in KEYWORD_BLACKLIST):
+            continue
         key = _norm_key(j.title, j.company, j.link)
         if key in seen:
             continue
@@ -164,11 +168,12 @@ def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:
     return "\n".join(out) if out else "Keine Treffer."
 
 
-def export_csv(rows: List[Job], path: str = "generated/jobs_latest.csv") -> None:
+def export_csv(rows: List[Job], path: str = None) -> None:
     if not EXPORT_CSV:
         return
-    Path("generated").mkdir(exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    out_path = path or EXPORT_CSV_PATH
+    Path(os.path.dirname(out_path) or ".").mkdir(exist_ok=True)
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["title", "company", "location", "match", "score", "link", "source"])
         for j in rows:
