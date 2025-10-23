@@ -64,6 +64,8 @@ def main(argv=None):
     sub.add_parser("start")
     sub.add_parser("open")
     sub.add_parser("email-test")
+    sub.add_parser("list")
+    sub.add_parser("mail-list")
     args = p.parse_args(argv)
 
     if args.cmd == "env-check":
@@ -76,8 +78,21 @@ def main(argv=None):
         cmd_open()
     elif args.cmd == "email-test":
         cmd_email_test()
+    elif args.cmd == "list":
+        from job_collector import collect_jobs, format_jobs_plain
+        jobs = collect_jobs()
+        print(format_jobs_plain(jobs))
+    elif args.cmd == "mail-list":
+        from job_collector import collect_jobs
+        from email_automation import EmailAutomation
+        jobs = [
+            {"title": j.title, "company": j.company, "location": j.location, "link": j.link}
+            for j in collect_jobs()
+            if j.match in {"exact", "good"}
+        ]
+        ok = EmailAutomation().send_job_alert(jobs)
+        print("E-Mail gesendet" if ok else "E-Mail nicht gesendet (deaktiviert oder Fehler)")
 
 
 if __name__ == "__main__":
     main()
-
