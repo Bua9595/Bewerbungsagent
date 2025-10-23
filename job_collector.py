@@ -10,6 +10,7 @@ from pathlib import Path
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
 
@@ -32,14 +33,32 @@ class Job:
 
 
 def _mk_driver(headless: bool = True):
-    options = webdriver.ChromeOptions()
+    opts = Options()
     if headless:
-        options.add_argument("--headless")
-        options.add_argument("--disable-gpu")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--window-size=1600,1200")
+        # moderner Headless-Modus
+        opts.add_argument("--headless=new")
+        opts.add_argument("--disable-gpu")
+    opts.add_argument("--no-sandbox")
+    opts.add_argument("--window-size=1200,2000")
+    opts.add_argument("--user-agent=Bewerbungsagent/1.0 (+job-collector)")
     service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(service=service, options=opts)
+    try:
+        driver.set_page_load_timeout(20)
+    except Exception:
+        pass
+    return driver
+
+
+def _get_html(driver, url: str, tries: int = 2) -> str:
+    for i in range(tries):
+        try:
+            driver.get(url)
+            return driver.page_source
+        except Exception:
+            if i + 1 == tries:
+                raise
+    return ""
 
 
 def _text(v):
@@ -93,8 +112,7 @@ def _norm_key(title: str, company: str, link: str) -> str:
 
 def _collect_indeed(driver, url: str, limit: int = 25) -> List[Job]:
     jobs: List[Job] = []
-    driver.get(url)
-    time.sleep(2.0)
+    html = _get_html(driver, url)
 
     cards = driver.find_elements(By.CSS_SELECTOR, "a.tapItem")
     for a in cards[:limit]:

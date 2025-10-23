@@ -81,8 +81,11 @@ def main(argv=None):
     elif args.cmd == "list":
         from job_collector import collect_jobs, format_jobs_plain, export_csv
         jobs = collect_jobs()
-        export_csv(jobs)
-        print(format_jobs_plain(jobs))
+        if not jobs:
+            print("Keine Treffer. CSV/Mail übersprungen.")
+        else:
+            export_csv(jobs)
+            print(format_jobs_plain(jobs))
     elif args.cmd == "mail-list":
         from job_collector import collect_jobs, export_csv
         from email_automation import EmailAutomation
@@ -97,6 +100,9 @@ def main(argv=None):
         rows = collect_jobs()
         # Filter für Mail: mind. good/exact und Score-Schwelle
         filtered = [r for r in rows if r.match in {"exact", "good"} and r.score >= min_score]
+        if not filtered:
+            print("Keine passenden Treffer. Mail/WhatsApp übersprungen.")
+            return
         export_csv(filtered)
 
         jobs_payload = [

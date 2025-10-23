@@ -3,6 +3,7 @@ import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import Iterable, Optional, List
+import urllib.parse
 
 
 @dataclass
@@ -83,9 +84,37 @@ class JobsChAdapter:
         if location:
             params["region"] = location
         url = f"{self.BASE}?{urllib.parse.urlencode(params, doseq=True)}"
-        driver.get(url)
-        html = driver.page_source
-        rows = _to_jobrows(_parse_jsonld(html), self.source)
+        def _get_html(u: str) -> str:
+            try:
+                driver.get(u)
+                # Cookie‑Banner wegklicken (best effort)
+                try:
+                    driver.execute_script("document.querySelectorAll('[id*="consent"], [class*="cookie" i]').forEach(e=>{try{(e.querySelector('button[aria-label*="kzept" i]')||e.querySelector('button'))?.click()}catch(_){}})")
+                except Exception:
+                    pass
+                return driver.page_source
+            except Exception:
+                return ""
+
+        # Pagination (bis 3 Seiten)
+        html_pages = []
+        for p in range(1, 3 + 1):
+            paged = url + (f"&page={p}" if "?" in url else f"?page={p}")
+            html_pages.append(_get_html(paged))
+
+        rows: List[JobRow] = []
+        for html in html_pages:
+            if not html:
+                continue
+            parsed = _to_jobrows(_parse_jsonld(html), self.source)
+            rows.extend(parsed)
+
+            # Fallback, falls JSON‑LD fehlt
+            if not parsed:
+                for m in re.finditer(r'<a[^>]+href="(/de/stellen[^"#?]+)"[^>]*>([^<]+)</a>', html, re.I):
+                    link = urllib.parse.urljoin(self.BASE, m.group(1))
+                    title = m.group(2).strip()
+                    rows.append(JobRow(title=title, company="", location="", link=link, source=self.source))
         seen, out = set(), []
         for r in rows:
             if r.link in seen:
@@ -106,9 +135,33 @@ class JobupAdapter:
         if location:
             params["location"] = location
         url = f"{self.BASE}?{urllib.parse.urlencode(params, doseq=True)}"
-        driver.get(url)
-        html = driver.page_source
-        rows = _to_jobrows(_parse_jsonld(html), self.source)
+        def _get_html(u: str) -> str:
+            try:
+                driver.get(u)
+                try:
+                    driver.execute_script("document.querySelectorAll('[id*="consent"], [class*="cookie" i]').forEach(e=>{try{(e.querySelector('button[aria-label*="kzept" i]')||e.querySelector('button'))?.click()}catch(_){}})")
+                except Exception:
+                    pass
+                return driver.page_source
+            except Exception:
+                return ""
+
+        html_pages = []
+        for p in range(1, 3 + 1):
+            paged = url + (f"&page={p}" if "?" in url else f"?page={p}")
+            html_pages.append(_get_html(paged))
+
+        rows: List[JobRow] = []
+        for html in html_pages:
+            if not html:
+                continue
+            parsed = _to_jobrows(_parse_jsonld(html), self.source)
+            rows.extend(parsed)
+            if not parsed:
+                for m in re.finditer(r'<a[^>]+href="(/de/stellen[^"#?]+)"[^>]*>([^<]+)</a>', html, re.I):
+                    link = urllib.parse.urljoin(self.BASE, m.group(1))
+                    title = m.group(2).strip()
+                    rows.append(JobRow(title=title, company="", location="", link=link, source=self.source))
         seen, out = set(), []
         for r in rows:
             if r.link in seen:
@@ -118,4 +171,3 @@ class JobupAdapter:
             if len(out) >= limit:
                 break
         return out
-
