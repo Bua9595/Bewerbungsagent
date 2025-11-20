@@ -33,3 +33,7 @@ generated/
 *.doc
 *.docx
 *.xlsx
+
+
+
+.venv/
