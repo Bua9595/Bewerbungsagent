@@ -27,6 +27,9 @@ bewerbungen_tracking.csv
 bewerbungsvorlagen.txt
 anschreiben_sammlung.txt
 generated/
+data/
+out/
+04_Versendete_Bewerbungen/
 
 # Personal documents
 *.pdf
