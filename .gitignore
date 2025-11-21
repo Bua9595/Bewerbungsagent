@@ -34,6 +34,5 @@ generated/
 *.docx
 *.xlsx
 
-
-
+# Virtual environment
 .venv/
