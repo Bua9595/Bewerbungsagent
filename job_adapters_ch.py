@@ -4,6 +4,10 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Iterable, Optional, List
 
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
 
 @dataclass
 class JobRow:
@@ -29,46 +33,51 @@ document
 """
 
 
+def _is_detail_link(link: str) -> bool:
+    if not link:
+        return False
+    u = link.lower()
+    if "/detail/" in u:
+        return True
+    if re.search(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", u
+    ):
+        return True
+    if re.search(r"/\d{6,}(/|$)", u):
+        return True
+    return False
+
+
 def _parse_jsonld(html: str) -> List[dict]:
-    """Sammelt JobPosting-Objekte aus JSON-LD Blöcken der Seite."""
     out: List[dict] = []
     pattern = r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>'
-
     for m in re.finditer(pattern, html, re.S | re.I):
         chunk = m.group(1)
         if not chunk:
             continue
-
         try:
             data = json.loads(chunk.strip())
         except Exception:
             continue
-
         stack = data if isinstance(data, list) else [data]
         while stack:
             obj = stack.pop(0)
-
-            if (
-                isinstance(obj, dict)
-                and "@graph" in obj
-                and isinstance(obj["@graph"], list)
+            if isinstance(obj, dict) and "@graph" in obj and isinstance(
+                obj["@graph"], list
             ):
                 stack.extend(obj["@graph"])
                 continue
-
             if isinstance(obj, dict):
                 t = obj.get("@type")
                 if t == "JobPosting" or (
                     isinstance(t, list) and "JobPosting" in t
                 ):
                     out.append(obj)
-
     return out
 
 
 def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
     rows: List[JobRow] = []
-
     for it in items:
         title = (it.get("title") or "").strip()
 
@@ -115,7 +124,7 @@ def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
 
         date = (it.get("datePosted") or "").strip()
 
-        if not title or not link:
+        if not title or not link or not _is_detail_link(link):
             continue
 
         rows.append(
@@ -128,8 +137,61 @@ def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
                 source=source,
             )
         )
-
     return rows
+
+
+def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
+    """
+    DOM-Scrape: sucht nach Anchor-Tags mit detail-typischen hrefs.
+    Funktioniert auch wenn Seite client-seitig rendert.
+    """
+    rows: List[JobRow] = []
+
+    selectors = [
+        'a[href*="/jobs/detail/"]',
+        'a[href*="/de/jobs/detail/"]',
+        'a[href*="/emploi/detail/"]',
+        'a[href*="/stellenangebote/"]',  # manche detailseiten hängen hier drunter
+    ]
+
+    anchors = []
+    for sel in selectors:
+        try:
+            anchors += driver.find_elements(By.CSS_SELECTOR, sel)
+        except Exception:
+            continue
+
+    for a in anchors:
+        try:
+            href = (a.get_attribute("href") or "").strip()
+            if not _is_detail_link(href):
+                continue
+            title = (a.text or "").strip()
+            if not title:
+                # manchmal steckt Titel in aria-label
+                title = (a.get_attribute("aria-label") or "").strip()
+            if not title:
+                continue
+            rows.append(
+                JobRow(
+                    title=title,
+                    company="",
+                    location="",
+                    link=href,
+                    source=base_url,
+                )
+            )
+        except Exception:
+            continue
+
+    # dedupe
+    seen, out = set(), []
+    for r in rows:
+        if r.link in seen:
+            continue
+        seen.add(r.link)
+        out.append(r)
+    return out
 
 
 class JobsChAdapter:
@@ -147,49 +209,36 @@ class JobsChAdapter:
         params = {"term": query}
         if location:
             params["region"] = location
-
         url = f"{self.BASE}?{urllib.parse.urlencode(params, doseq=True)}"
 
-        def _get_html(u: str) -> str:
+        rows: List[JobRow] = []
+
+        for p in range(1, 4):
+            paged = url + f"&page={p}"
             try:
-                driver.get(u)
+                driver.get(paged)
                 try:
                     driver.execute_script(COOKIE_CLICK_JS)
                 except Exception:
                     pass
-                return driver.page_source
-            except Exception:
-                return ""
 
-        html_pages = []
-        for p in range(1, 4):
-            paged = url + (f"&page={p}" if "?" in url else f"?page={p}")
-            html_pages.append(_get_html(paged))
-
-        rows: List[JobRow] = []
-        for html in html_pages:
-            if not html:
-                continue
-
-            parsed = _to_jobrows(_parse_jsonld(html), self.source)
-            rows.extend(parsed)
-
-            if not parsed:
-                fb_pattern = (
-                    r'<a[^>]+href="(/de/stellen[^"#?]+)"[^>]*>([^<]+)</a>'
-                )
-                for m in re.finditer(fb_pattern, html, re.I):
-                    link = urllib.parse.urljoin(self.BASE, m.group(1))
-                    title = m.group(2).strip()
-                    rows.append(
-                        JobRow(
-                            title=title,
-                            company="",
-                            location="",
-                            link=link,
-                            source=self.source,
-                        )
+                # warten bis zumindest irgendwas gerendert ist
+                try:
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "a"))
                     )
+                except Exception:
+                    pass
+
+                html = driver.page_source or ""
+                parsed = _to_jobrows(_parse_jsonld(html), self.source)
+                if parsed:
+                    rows.extend(parsed)
+                else:
+                    rows.extend(_extract_dom_links(driver, self.source))
+
+            except Exception:
+                continue
 
         seen, out = set(), []
         for r in rows:
@@ -199,7 +248,6 @@ class JobsChAdapter:
             out.append(r)
             if len(out) >= limit:
                 break
-
         return out
 
 
@@ -218,49 +266,35 @@ class JobupAdapter:
         params = {"term": query}
         if location:
             params["location"] = location
-
         url = f"{self.BASE}?{urllib.parse.urlencode(params, doseq=True)}"
 
-        def _get_html(u: str) -> str:
+        rows: List[JobRow] = []
+
+        for p in range(1, 4):
+            paged = url + f"&page={p}"
             try:
-                driver.get(u)
+                driver.get(paged)
                 try:
                     driver.execute_script(COOKIE_CLICK_JS)
                 except Exception:
                     pass
-                return driver.page_source
-            except Exception:
-                return ""
 
-        html_pages = []
-        for p in range(1, 4):
-            paged = url + (f"&page={p}" if "?" in url else f"?page={p}")
-            html_pages.append(_get_html(paged))
-
-        rows: List[JobRow] = []
-        for html in html_pages:
-            if not html:
-                continue
-
-            parsed = _to_jobrows(_parse_jsonld(html), self.source)
-            rows.extend(parsed)
-
-            if not parsed:
-                fb_pattern = (
-                    r'<a[^>]+href="(/de/stellen[^"#?]+)"[^>]*>([^<]+)</a>'
-                )
-                for m in re.finditer(fb_pattern, html, re.I):
-                    link = urllib.parse.urljoin(self.BASE, m.group(1))
-                    title = m.group(2).strip()
-                    rows.append(
-                        JobRow(
-                            title=title,
-                            company="",
-                            location="",
-                            link=link,
-                            source=self.source,
-                        )
+                try:
+                    WebDriverWait(driver, 10).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "a"))
                     )
+                except Exception:
+                    pass
+
+                html = driver.page_source or ""
+                parsed = _to_jobrows(_parse_jsonld(html), self.source)
+                if parsed:
+                    rows.extend(parsed)
+                else:
+                    rows.extend(_extract_dom_links(driver, self.source))
+
+            except Exception:
+                continue
 
         seen, out = set(), []
         for r in rows:
@@ -270,5 +304,4 @@ class JobupAdapter:
             out.append(r)
             if len(out) >= limit:
                 break
-
         return out
