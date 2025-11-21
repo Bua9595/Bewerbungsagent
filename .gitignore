@@ -35,4 +35,5 @@ generated/
 *.xlsx
 
 # Virtual environment
+venv/
 .venv/
