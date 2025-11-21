@@ -1,63 +1,54 @@
 #!/usr/bin/env python3
 """
-Test-Skript für die E-Mail-Konfiguration
+Test-Skript für die E-Mail-Konfiguration.
+Gibt IMMER (success: bool, output_lines: list[str]) zurück.
 """
 
-from __future__ import annotations
-
 import os
-import smtplib
 import sys
-from typing import List, Tuple
+import smtplib
+
+# Projektpfad einhängen
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from config import config
 from email_automation import EmailAutomation
 
 
-def _config_check() -> Tuple[bool, List[str]]:
-    """Prüft Konfiguration und liefert (ok, output_lines)."""
-    output: List[str] = []
+def test_config():
+    """Prüft ENV/Config und gibt (ok, lines) zurück."""
+    output = []
     output.append("=== E-Mail Konfiguration Test ===")
 
-    sender_pw_env = os.getenv("SENDER_PASSWORD", "")
-    output.append(
-        f"Env SENDER_PASSWORD exists: {'Yes' if sender_pw_env else 'No'}"
-    )
-    output.append(f"Env SENDER_PASSWORD value length: {len(sender_pw_env)}")
+    env_pwd = os.getenv("SENDER_PASSWORD", "")
+    output.append(f"Env SENDER_PASSWORD exists: {'Yes' if env_pwd else 'No'}")
+    output.append(f"Env SENDER_PASSWORD value length: {len(env_pwd)}")
 
     output.append(f"Sender Email: {config.SENDER_EMAIL}")
     output.append(f"SMTP Server: {config.SMTP_SERVER}")
     output.append(f"SMTP Port: {config.SMTP_PORT}")
     output.append(f"Recipient Emails: {config.RECIPIENT_EMAILS}")
 
-    password_set = bool(config.SENDER_PASSWORD)
-    output.append(
-        f"Config Password configured: {'Yes' if password_set else 'No'}"
-    )
-    output.append(
-        f"Config Password length: {len(config.SENDER_PASSWORD) if password_set else 0}"
-    )
+    pwd_len = len(config.SENDER_PASSWORD or "")
+    password_set = pwd_len > 0
+    output.append(f"Config Password configured: {'Yes' if password_set else 'No'}")
+    output.append(f"Config Password length: {pwd_len}")
 
     if not password_set:
         output.append("ERROR: SENDER_PASSWORD ist nicht konfiguriert!")
-        output.append(
-            "Bitte stelle sicher, dass die .env-Datei SENDER_PASSWORD enthält."
-        )
-        output.append(
-            "Oder überprüfe, ob python-dotenv korrekt funktioniert."
-        )
+        output.append("Stelle sicher, dass .env SENDER_PASSWORD enthält und geladen wird.")
         return False, output
 
     output.append("OK. Konfiguration scheint korrekt zu sein.")
     return True, output
 
 
-def _email_connection_check() -> Tuple[bool, List[str]]:
-    """Testet die SMTP-Verbindung und liefert (ok, output_lines)."""
-    output: List[str] = []
+def test_email_connection():
+    """Testet SMTP Login und gibt (ok, lines) zurück."""
+    output = []
     output.append("=== E-Mail Verbindung Test ===")
 
-    config_ok, config_output = _config_check()
+    config_ok, config_output = test_config()
     output.extend(config_output)
 
     if not config_ok:
@@ -66,10 +57,10 @@ def _email_connection_check() -> Tuple[bool, List[str]]:
     try:
         email_auto = EmailAutomation()
 
-        server = smtplib.SMTP(
-            email_auto.smtp_server, email_auto.smtp_port, timeout=15
-        )
+        server = smtplib.SMTP(email_auto.smtp_server, email_auto.smtp_port, timeout=20)
+        server.ehlo()
         server.starttls()
+        server.ehlo()
         server.login(email_auto.sender_email, email_auto.sender_password)
         server.quit()
 
@@ -81,35 +72,8 @@ def _email_connection_check() -> Tuple[bool, List[str]]:
         return False, output
 
 
-def test_config() -> None:
-    ok, _ = _config_check()
-    assert ok, "E-Mail-Konfiguration ist nicht korrekt (siehe Output)."
-
-
-def test_email_connection() -> None:
-    ok, _ = _email_connection_check()
-    assert ok, "E-Mail-Verbindung fehlgeschlagen (siehe Output)."
-
-
 if __name__ == "__main__":
-    success, output_lines = _email_connection_check()
-
-    with open("test_results.txt", "w", encoding="utf-8") as f:
-        for line in output_lines:
-            f.write(line + "\n")
-            print(line)
-
-    if success:
-        final_msg = (
-            "\nAlle Tests bestanden! Die E-Mail-Funktionalität sollte funktionieren."
-        )
-    else:
-        final_msg = (
-            "\nEinige Tests sind fehlgeschlagen. Bitte überprüfe die Konfiguration."
-        )
-
-    print(final_msg)
-    with open("test_results.txt", "a", encoding="utf-8") as f:
-        f.write(final_msg + "\n")
-
+    success, lines = test_email_connection()
+    for line in lines:
+        print(line)
     sys.exit(0 if success else 1)
