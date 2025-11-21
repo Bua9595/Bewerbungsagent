@@ -8,10 +8,17 @@ Beispiele:
   python tasks.py start
   python tasks.py open
   python tasks.py email-test
+  python tasks.py list
+  python tasks.py mail-list
+  python tasks.py prepare-applications --force-all
 """
 
 import argparse
 import os
+import re
+import json
+from datetime import datetime
+from pathlib import Path
 
 
 def cmd_env_check(_args=None):
@@ -86,6 +93,7 @@ def cmd_mail_list(_args=None):
 
     min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
     rows = collect_jobs()
+
     filtered = [
         r for r in rows
         if r.match in {"exact", "good"} and r.score >= min_score
@@ -110,6 +118,233 @@ def cmd_mail_list(_args=None):
         print(f"WhatsApp Hinweis fehlgeschlagen: {e}")
 
 
+# ---------------------------
+# prepare-applications LOGIK
+# ---------------------------
+
+_COMPANY_HINT_RE = re.compile(
+    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|sàrl|ltd|inc|llc)\b",
+    re.IGNORECASE
+)
+
+_LABEL_RE = re.compile(
+    r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)",
+    re.IGNORECASE
+)
+
+_RELDATE_INLINE_RE = re.compile(
+    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+ (tagen|wochen))\b",
+    re.IGNORECASE
+)
+
+_CITY_HINT_RE = re.compile(
+    r"\b(zürich|bülach|kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|genève|geneve|schweiz)\b",
+    re.IGNORECASE
+)
+
+
+def _sanitize_filename(s: str) -> str:
+    s = s.strip()
+    s = re.sub(r"[\\/:*?\"<>|]", "_", s)
+    s = re.sub(r"\s+", " ", s)
+    return s[:120] if len(s) > 120 else s
+
+
+def _normalize_line(l: str) -> str:
+    # entfernt z.B. '01. [exact]' am Zeilenanfang
+    l = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", l)
+    return l.strip().strip('"').strip()
+
+
+def _is_noise_line(l: str) -> bool:
+    if not l:
+        return True
+    if _LABEL_RE.search(l):
+        return True
+    if _RELDATE_INLINE_RE.search(l):
+        return True
+    return False
+
+
+def _extract_from_multiline_title(raw_title: str):
+    """
+    Robustere Heuristik für jobs.json title:
+    - title enthält oft Sammeltext: Zeit, Jobtitel, Labels, Ort, Firma.
+    - Wir filtern Labels/relative Zeiten auch wenn inline.
+    - Jobtitel = erste non-noise Zeile.
+    - Firma = letzte non-noise Zeile mit Rechtsform (AG/GmbH/SA/...) sonst letzte non-noise Zeile.
+    - Ort = Zeile nach "Arbeitsort:" falls vorhanden, sonst erste non-noise Zeile mit City-Hint.
+    """
+    raw_lines = [ _normalize_line(x) for x in (raw_title or "").splitlines() ]
+    raw_lines = [x for x in raw_lines if x]
+
+    # location: explizit nach "Arbeitsort"
+    location = ""
+    for i, l in enumerate(raw_lines):
+        if l.lower().startswith("arbeitsort"):
+            if i + 1 < len(raw_lines):
+                location = _normalize_line(raw_lines[i + 1])
+            break
+
+    clean = [l for l in raw_lines if not _is_noise_line(l)]
+
+    job_title = clean[0] if clean else ""
+    company = ""
+
+    # Firma: letzte Zeile mit Rechtsform-Hint
+    for l in reversed(clean):
+        if _COMPANY_HINT_RE.search(l):
+            company = l
+            break
+
+    # fallback: letzte clean Zeile (wenn nicht schon job_title)
+    if not company and len(clean) >= 2:
+        company = clean[-1]
+        if company == job_title:
+            company = ""
+
+    # fallback location via city hint
+    if not location:
+        for l in clean[1:]:
+            if _CITY_HINT_RE.search(l):
+                location = l
+                break
+
+    if location == company:
+        location = ""
+
+    return job_title, company, location
+
+
+def _select_template(title: str, templates_dir: Path) -> Path:
+    t = (title or "").lower()
+    if any(k in t for k in ["logistik", "lager", "kommission", "versand", "wareneingang", "warenausgang"]):
+        p = templates_dir / "T3_Logistik.docx"
+        if p.exists():
+            return p
+    if any(k in t for k in ["system", "techniker", "engineer", "operator", "netzw", "noc"]):
+        p = templates_dir / "T2_Systemtechnik.docx"
+        if p.exists():
+            return p
+    return templates_dir / "T1_ITSupport.docx"
+
+
+def _replace_placeholders_docx(doc, mapping: dict):
+    # paragraphs
+    for p in doc.paragraphs:
+        for run in p.runs:
+            txt = run.text
+            for k, v in mapping.items():
+                if k in txt:
+                    txt = txt.replace(k, v)
+            run.text = txt
+    # tables
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for p in cell.paragraphs:
+                    for run in p.runs:
+                        txt = run.text
+                        for k, v in mapping.items():
+                            if k in txt:
+                                txt = txt.replace(k, v)
+                        run.text = txt
+
+
+def cmd_prepare_applications(args):
+    """
+    Liest data/jobs.json, nimmt fit=="OK" (oder --force-all),
+    wendet .docx Templates an, schreibt out/*.docx und
+    hängt neue Zeilen an bewerbungen_tracking.csv.
+    """
+    from docx import Document
+
+    proj = Path(args.proj).resolve() if args.proj else Path.cwd()
+    in_path = Path(args.in_file) if args.in_file else (proj / "data" / "jobs.json")
+    out_dir = Path(args.out_dir) if args.out_dir else (proj / "out")
+    templates_dir = Path(args.templates_dir) if args.templates_dir else (proj / "Anschreiben_Templates")
+    tracker_path = Path(args.tracker) if args.tracker else (proj / "bewerbungen_tracking.csv")
+
+    if not in_path.exists():
+        print(f"FEHLER: {in_path} nicht gefunden.")
+        raise SystemExit(1)
+    if not templates_dir.exists():
+        print(f"FEHLER: Templates-Ordner fehlt: {templates_dir}")
+        raise SystemExit(1)
+    if not out_dir.exists():
+        print(f"FEHLER: out/ fehlt: {out_dir} (Ordner bitte einmal anlegen).")
+        raise SystemExit(1)
+
+    jobs = json.loads(in_path.read_text(encoding="utf-8"))
+
+    header = "Datum,Firma,Position,Portal,Link,Status,Notizen\n"
+    if not tracker_path.exists():
+        tracker_path.write_text(header, encoding="utf-8")
+    else:
+        txt = tracker_path.read_text(encoding="utf-8")
+        if not txt.strip().startswith("Datum,"):
+            tracker_path.write_text(header + txt, encoding="utf-8")
+
+    today = datetime.now().strftime("%d.%m.%Y")
+    stamp = datetime.now().strftime("%Y%m%d")
+
+    prepared = 0
+    for job in jobs:
+        fit = (job.get("fit") or "").upper()
+        if not args.force_all and fit != "OK":
+            continue
+
+        raw_title = job.get("title", "")
+        job_title = job.get("job_title") or job.get("position") or ""
+        company = job.get("company") or ""
+        location = job.get("location") or ""
+
+        if (not job_title) or (not company):
+            t2, c2, l2 = _extract_from_multiline_title(raw_title)
+            if not job_title and t2:
+                job_title = t2
+            if not company and c2:
+                company = c2
+            if not location and l2:
+                location = l2
+
+        if not company:
+            company = "Firma Unbekannt"
+        if not job_title:
+            job_title = "Position Unbekannt"
+
+        source = job.get("source") or job.get("portal") or ""
+        url = job.get("url") or job.get("link") or ""
+
+        template_path = _select_template(job_title, templates_dir)
+        if not template_path.exists():
+            print(f"FEHLER: Template fehlt: {template_path}")
+            continue
+
+        doc = Document(str(template_path))
+
+        mapping = {
+            "<Ort>": location or "Bülach",
+            "<Datum>": today,
+            "<JOBTITEL>": job_title,
+            "<FIRMA>": company,
+        }
+        _replace_placeholders_docx(doc, mapping)
+
+        out_name = _sanitize_filename(f"{company}_{job_title}_{stamp}.docx")
+        out_path = out_dir / out_name
+        doc.save(str(out_path))
+
+        row = f'{today},"{company}","{job_title}","{source}","{url}","Erstellt",""\n'
+        with tracker_path.open("a", encoding="utf-8") as f:
+            f.write(row)
+
+        print(f"Erstellt: {out_name}")
+        prepared += 1
+
+    print(f"Fertig. {prepared} Bewerbungen vorbereitet.")
+
+
 def main(argv=None):
     p = argparse.ArgumentParser()
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -121,6 +356,14 @@ def main(argv=None):
     sub.add_parser("email-test")
     sub.add_parser("list")
     sub.add_parser("mail-list")
+
+    prep = sub.add_parser("prepare-applications")
+    prep.add_argument("--proj", default="", help="Projekt-Root (default: cwd)")
+    prep.add_argument("--in", dest="in_file", default="", help="Input jobs.json")
+    prep.add_argument("--out", dest="out_dir", default="", help="Output-Ordner out/")
+    prep.add_argument("--templates", dest="templates_dir", default="", help="Templates-Ordner")
+    prep.add_argument("--tracker", default="", help="Tracker CSV")
+    prep.add_argument("--force-all", action="store_true", help="Alle Jobs verarbeiten, egal fit")
 
     args = p.parse_args(argv)
 
@@ -138,6 +381,8 @@ def main(argv=None):
         cmd_list(args)
     elif args.cmd == "mail-list":
         cmd_mail_list(args)
+    elif args.cmd == "prepare-applications":
+        cmd_prepare_applications(args)
 
 
 if __name__ == "__main__":
