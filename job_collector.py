@@ -1,11 +1,11 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple
-import os
-import csv
-import re
 from pathlib import Path
+from typing import List, Tuple
+import csv
+import os
+import re
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -36,17 +36,18 @@ class Job:
 def _mk_driver(headless: bool = True) -> webdriver.Chrome:
     opts = Options()
     if headless:
-        # moderner Headless-Modus
         opts.add_argument("--headless=new")
         opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
     opts.add_argument("--window-size=1200,2000")
     opts.add_argument("--user-agent=Bewerbungsagent/1.0 (+job-collector)")
     opts.add_argument("--lang=de-CH,de;q=0.9")
+
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=opts)
+
     try:
-        driver.set_page_load_timeout(20)
+        driver.set_page_load_timeout(25)
     except Exception:
         pass
     try:
@@ -72,7 +73,6 @@ def _text(v: str | None) -> str:
 
 
 def _score_title(title: str) -> Tuple[int, str]:
-    """Heuristische Bewertung basierend auf Keywords/Negatives."""
     t = title.lower()
 
     positives_raw = (
@@ -80,8 +80,8 @@ def _score_title(title: str) -> Tuple[int, str]:
         + getattr(config, "TITLE_VARIANTS_DE", [])
         + getattr(config, "TITLE_VARIANTS_EN", [])
     )
-    positives = {p.lower() for p in positives_raw}
-    negatives = {n.lower() for n in getattr(config, "NEGATIVE_KEYWORDS", [])}
+    positives = {p.lower() for p in positives_raw if p}
+    negatives = {n.lower() for n in getattr(config, "NEGATIVE_KEYWORDS", []) if n}
 
     p_hits = sum(1 for p in positives if p in t)
     n_hits = sum(1 for n in negatives if n in t)
@@ -97,12 +97,12 @@ def _score_title(title: str) -> Tuple[int, str]:
     return score, label
 
 
-# ----- ENV/Scoring Hilfen -----
 TRUTHY = {"1", "true", "t", "y", "yes", "ja", "j"}
 EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
 EXPORT_CSV_PATH = os.getenv("EXPORT_CSV_PATH", "generated/jobs_latest.csv")
 MIN_SCORE_MAIL = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
 LOCATION_BOOST_KM = int(os.getenv("LOCATION_BOOST_KM", "15") or 15)
+
 BLACKLIST = {
     x.strip().lower()
     for x in (os.getenv("BLACKLIST_COMPANIES", "") or "").split(",")
@@ -116,15 +116,14 @@ KEYWORD_BLACKLIST = {
 ENABLED_SOURCES = {
     x.strip().lower()
     for x in (
-        os.getenv("ENABLED_SOURCES", "jobs.ch,jobup.ch")
-        or "jobs.ch,jobup.ch"
+        os.getenv("ENABLED_SOURCES", "jobs.ch,jobup.ch,indeed")
+        or "jobs.ch,jobup.ch,indeed"
     ).split(",")
     if x.strip()
 }
 
 
 def _location_boost(job_location: str, search_locations: List[str]) -> int:
-    # Pragmatismus: String-Match statt Geocoding (KM-Wert dient nur als ENV-Schwellensymbol)
     jl = (job_location or "").lower()
     return 1 if any(loc.lower() in jl for loc in (search_locations or [])) else 0
 
@@ -137,14 +136,13 @@ def _norm_key(title: str, company: str, link: str) -> str:
 
 
 def _collect_indeed(
-    driver: webdriver.Chrome, url: str, limit: int = 25
+    driver: webdriver.Chrome,
+    url: str,
+    limit: int = 25,
 ) -> List[Job]:
     jobs: List[Job] = []
-
-    # lädt die Seite + liefert HTML, aber wir brauchen nur page_load side effects
     _get_html(driver, url)
 
-    # Warte auf Karten (robuster als Sleep)
     try:
         WebDriverWait(driver, 12).until(
             EC.presence_of_all_elements_located((By.CSS_SELECTOR, "a.tapItem"))
@@ -160,9 +158,7 @@ def _collect_indeed(
             title = _text(a.text)
 
         try:
-            company = _text(
-                a.find_element(By.CSS_SELECTOR, "span.companyName").text
-            )
+            company = _text(a.find_element(By.CSS_SELECTOR, "span.companyName").text)
         except Exception:
             company = ""
 
@@ -191,84 +187,100 @@ def _collect_indeed(
     return jobs
 
 
-def collect_jobs(limit_per_site: int = 25, max_total: int = 100) -> List[Job]:
+def collect_jobs(
+    limit_per_site: int = 25,
+    max_total: int = 100,
+) -> List[Job]:
     urls = build_search_urls(config)
-    indeed_url = None
-    for k, v in urls.items():
-        if "indeed" in k.lower() or "indeed" in v.lower():
-            indeed_url = v
-            break
 
-    # Query/Location für Adapter (pragmatisch: jeweils erstes Element)
-    base_keywords = getattr(config, "SEARCH_KEYWORDS", ["IT Support"]) or [
-        "IT Support"
-    ]
-    locations = getattr(config, "SEARCH_LOCATIONS", ["Zürich"]) or ["Zürich"]
-    query = base_keywords[0]
-    location = locations[0]
+    base_keywords = getattr(config, "SEARCH_KEYWORDS", []) or ["IT Support"]
+    locations = getattr(config, "SEARCH_LOCATIONS", []) or ["Zürich"]
     radius_km = getattr(config, "LOCATION_RADIUS_KM", 25)
 
     all_jobs: List[Job] = []
     driver = _mk_driver(headless=getattr(config, "HEADLESS_MODE", True))
+
     try:
-        # Indeed (sofern aktiviert oder keine Einschränkung)
+        # Indeed (falls URL vorhanden)
+        indeed_url = None
+        for k, v in urls.items():
+            if "indeed" in k.lower() or "indeed" in v.lower():
+                indeed_url = v
+                break
+
         if indeed_url and (not ENABLED_SOURCES or "indeed" in ENABLED_SOURCES):
             try:
                 indeed_jobs = _collect_indeed(
-                    driver, indeed_url, limit=limit_per_site
+                    driver,
+                    indeed_url,
+                    limit=limit_per_site,
                 )
                 all_jobs.extend(indeed_jobs)
-                try:
-                    job_logger.info(
-                        f"Indeed: {len(indeed_jobs)} Karten gefunden"
-                    )
-                except Exception:
-                    pass
+                job_logger.info(f"Indeed: {len(indeed_jobs)} Karten gefunden")
             except Exception as e:
                 job_logger.warning(f"Indeed Adapter Fehler: {e}")
 
-        # CH-Adapter
         adapters = [JobsChAdapter(), JobupAdapter()]
         for adapter in adapters:
             if ENABLED_SOURCES and adapter.source.lower() not in ENABLED_SOURCES:
                 continue
-            try:
-                rows = adapter.search(
-                    driver,
-                    query=query,
-                    location=location,
-                    radius_km=radius_km,
-                    limit=limit_per_site,
-                )
-                for r in rows:
-                    if isinstance(r, CHJobRow):
-                        all_jobs.append(
-                            Job(
-                                title=r.title,
-                                company=r.company,
-                                location=r.location,
-                                link=r.link,
-                                source=adapter.source,
-                            )
+
+            # über Keywords + Locations iterieren, aber früh abbrechen
+            for query in base_keywords:
+                for loc in locations:
+                    try:
+                        rows = adapter.search(
+                            driver,
+                            query=query,
+                            location=loc,
+                            radius_km=radius_km,
+                            limit=limit_per_site,
                         )
-                try:
-                    job_logger.info(
-                        f"{adapter.source}: {len(rows)} Roh-Treffer"
-                    )
-                except Exception:
-                    pass
-            except Exception as e:
-                job_logger.warning(f"Adapter {adapter.source} Fehler: {e}")
+
+                        converted = 0
+                        for r in rows:
+                            if not isinstance(r, CHJobRow):
+                                continue
+                            score, label = _score_title(r.title)
+                            all_jobs.append(
+                                Job(
+                                    title=r.title,
+                                    company=r.company,
+                                    location=r.location,
+                                    link=r.link,
+                                    source=adapter.source,
+                                    score=score,
+                                    match=label,
+                                    date=r.date or "",
+                                )
+                            )
+                            converted += 1
+
+                        job_logger.info(
+                            f"{adapter.source}: {converted} Roh-Treffer "
+                            f"(query='{query}', loc='{loc}')"
+                        )
+
+                        if len(all_jobs) >= max_total * 2:
+                            break
+                    except Exception as e:
+                        job_logger.warning(
+                            f"Adapter {adapter.source} Fehler "
+                            f"(query='{query}', loc='{loc}'): {e}"
+                        )
+                if len(all_jobs) >= max_total * 2:
+                    break
+
     finally:
         try:
             driver.quit()
         except Exception:
             pass
 
-    # Dedupe/Blacklist + Location-Boost
+    # Dedupe / Blacklist / Category filter / Location boost
     seen = set()
     unique: List[Job] = []
-    search_locs = getattr(config, "SEARCH_LOCATIONS", []) or []
+    search_locs = locations
 
     for j in all_jobs:
         if (j.company or "").lower() in BLACKLIST:
@@ -276,12 +288,11 @@ def collect_jobs(limit_per_site: int = 25, max_total: int = 100) -> List[Job]:
         if any(k in (j.title or "").lower() for k in KEYWORD_BLACKLIST):
             continue
 
-        # Filter: Kategorie-/Übersichtslinks ohne konkrete Jobs
         if j.source in ("jobs.ch", "jobup.ch"):
             link_has_digit = bool(re.search(r"\d", j.link))
-            tail_parts = j.link.rstrip("/").split("/")[-2:]
-            is_category = "stellenangebote/" in "/".join(tail_parts)
-            if (not link_has_digit) or (is_category and not link_has_digit):
+            tail = "/".join(j.link.rstrip("/").split("/")[-2:])
+            is_category = "stellenangebote" in tail and not "detail" in tail
+            if (not link_has_digit) or is_category:
                 continue
 
         key = _norm_key(j.title, j.company, j.link)
@@ -289,10 +300,8 @@ def collect_jobs(limit_per_site: int = 25, max_total: int = 100) -> List[Job]:
             continue
         seen.add(key)
 
-        # Boost
         j.score += _location_boost(j.location, search_locs)
 
-        # Re-klassifizieren
         if j.score >= 20:
             j.match = "exact"
         elif j.score >= 10:
@@ -307,7 +316,7 @@ def collect_jobs(limit_per_site: int = 25, max_total: int = 100) -> List[Job]:
 
 
 def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:
-    out = []
+    out: List[str] = []
     for i, j in enumerate(jobs[:top], 1):
         out.append(
             f"{i:02d}. [{j.match:^5}] {j.title} — {j.company} — {j.location}\n"
