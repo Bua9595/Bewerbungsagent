@@ -15,6 +15,7 @@ class JobRow:
     company: str
     location: str
     link: str
+    raw_title: str = ""
     date: Optional[str] = ""
     source: str = "unknown"
     cls: str = "weak"
@@ -48,6 +49,16 @@ def _is_detail_link(link: str) -> bool:
     return False
 
 
+_LINE_LABEL_RE = re.compile(
+    r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)",
+    re.IGNORECASE,
+)
+_LINE_RELDATE_RE = re.compile(
+    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+\s*(tagen|wochen|monaten?))\b",
+    re.IGNORECASE,
+)
+
+
 def _parse_jsonld(html: str) -> List[dict]:
     out: List[dict] = []
     pattern = r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>'
@@ -79,7 +90,8 @@ def _parse_jsonld(html: str) -> List[dict]:
 def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
     rows: List[JobRow] = []
     for it in items:
-        title = (it.get("title") or "").strip()
+        raw_title = (it.get("title") or "").strip()
+        title = raw_title
 
         comp = ""
         org = it.get("hiringOrganization")
@@ -133,6 +145,7 @@ def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
                 company=comp,
                 location=loc,
                 link=link,
+                raw_title=raw_title,
                 date=date,
                 source=source,
             )
@@ -144,6 +157,8 @@ def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
     """
     DOM-Scrape: sucht nach Anchor-Tags mit detail-typischen hrefs.
     Funktioniert auch wenn Seite client-seitig rendert.
+    Achtung: Anchor-Text bei jobs.ch kann Multi-Line/Noise enthalten.
+    Wir nehmen hier nur die erste sinnvolle Zeile als Titel.
     """
     rows: List[JobRow] = []
 
@@ -166,18 +181,33 @@ def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
             href = (a.get_attribute("href") or "").strip()
             if not _is_detail_link(href):
                 continue
-            title = (a.text or "").strip()
+
+            txt = (a.text or "").strip()
+            if not txt:
+                txt = (a.get_attribute("aria-label") or "").strip()
+            if not txt:
+                continue
+
+            # erste brauchbare Zeile als Jobtitel (ohne relative Zeit/Labels)
+            lines = [l.strip() for l in txt.splitlines() if l.strip()]
+            title = ""
+            for l in lines:
+                if _LINE_LABEL_RE.search(l) or _LINE_RELDATE_RE.search(l):
+                    continue
+                title = l
+                break
             if not title:
-                # manchmal steckt Titel in aria-label
-                title = (a.get_attribute("aria-label") or "").strip()
+                title = lines[0] if lines else txt
             if not title:
                 continue
+
             rows.append(
                 JobRow(
                     title=title,
                     company="",
                     location="",
                     link=href,
+                    raw_title=txt,
                     source=base_url,
                 )
             )

@@ -82,40 +82,43 @@ def cmd_list(_args=None):
 
 
 def cmd_mail_list(_args=None):
-    from job_collector import collect_jobs, export_csv
-    from email_automation import EmailAutomation
-
+    """
+    Sendet Job-Alert per Mail (und ggf. WhatsApp),
+    aber filtert nur nach Score. Wenn Filter leer wäre,
+    nimmt er die Top-N, damit nie “0 Treffer” trotz Roh-Funden passiert.
+    """
     try:
-        from notifier_whatsapp import send_whatsapp
-    except Exception:
-        def send_whatsapp(_txt: str) -> bool:
-            return False
+        from job_collector import collect_jobs
+        from email_automation import email_automation
 
-    min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
-    rows = collect_jobs()
+        rows = collect_jobs()
+        if not rows:
+            print("Keine Treffer insgesamt. Mail/WhatsApp übersprungen.")
+            return
 
-    filtered = [
-        r for r in rows
-        if r.match in {"exact", "good"} and r.score >= min_score
-    ]
+        min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
 
-    if not filtered:
-        print("Keine passenden Treffer. Mail/WhatsApp übersprungen.")
-        return
+        # Nur Score-Filter (match kann durch Heuristik/Normalisierung mal leer sein)
+        filtered = [r for r in rows if (r.score or 0) >= min_score]
 
-    export_csv(filtered)
+        # Fallback: wenn Filter leer, nimm Top 10 statt silent skip
+        if not filtered:
+            filtered = rows[:10]
 
-    jobs_payload = [
-        {"title": r.title, "company": r.company, "location": r.location, "link": r.link}
-        for r in filtered
-    ]
-    ok = EmailAutomation().send_job_alert(jobs_payload)
-    print("E-Mail gesendet" if ok else "E-Mail nicht gesendet (deaktiviert oder Fehler)")
+        payload = [
+            r.__dict__ if hasattr(r, "__dict__") else dict(r)
+            for r in filtered
+        ]
 
-    try:
-        send_whatsapp(f"[Bewerbungsagent] {len(filtered)} Treffer gesendet.")
+        ok = email_automation.send_job_alert(payload)
+        if ok:
+            print(f"E-Mail gesendet ({len(payload)} Stellen)")
+        else:
+            print("Mail/WhatsApp übersprungen (disabled oder Fehler).")
+
     except Exception as e:
-        print(f"WhatsApp Hinweis fehlgeschlagen: {e}")
+        print(f"Mail-Liste Fehler: {e}")
+
 
 
 # ---------------------------
