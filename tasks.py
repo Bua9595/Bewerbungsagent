@@ -87,16 +87,25 @@ def cmd_list(_args=None):
 def cmd_mail_list(_args=None):
     """
     Sendet Job-Alert per Mail (und ggf. WhatsApp),
-    aber filtert nur nach Score. Wenn Filter leer wäre,
-    nimmt er die Top-N, damit nie “0 Treffer” trotz Roh-Funden passiert.
+    aber filtert nur nach Score. Wenn Filter leer w?re,
+    nimmt er die Top-N, damit nie "0 Treffer" trotz Roh-Funden passiert.
     """
     try:
-        from job_collector import collect_jobs
+        from job_collector import collect_jobs, _norm_key
         from email_automation import email_automation
+
+        seen_path = Path("generated/seen_jobs.json")
+        seen_path.parent.mkdir(parents=True, exist_ok=True)
+        seen = set()
+        if seen_path.exists():
+            try:
+                seen = set(json.loads(seen_path.read_text(encoding="utf-8")))
+            except Exception:
+                seen = set()
 
         rows = collect_jobs()
         if not rows:
-            print("Keine Treffer insgesamt. Mail/WhatsApp übersprungen.")
+            print("Keine Treffer insgesamt. Mail/WhatsApp ?bersprungen.")
             return
 
         min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
@@ -113,11 +122,24 @@ def cmd_mail_list(_args=None):
             for r in filtered
         ]
 
-        ok = email_automation.send_job_alert(payload)
+        new_payload = []
+        for r in payload:
+            key = _norm_key(r.get("title"), r.get("company"), r.get("link"))
+            if key not in seen:
+                new_payload.append(r)
+                seen.add(key)
+
+        if not new_payload:
+            print("Keine neuen Treffer (Delta leer).")
+            return
+
+        seen_path.write_text(json.dumps(sorted(seen)), encoding="utf-8")
+
+        ok = email_automation.send_job_alert(new_payload)
         if ok:
-            print(f"E-Mail gesendet ({len(payload)} Stellen)")
+            print(f"E-Mail gesendet ({len(new_payload)} Stellen)")
         else:
-            print("Mail/WhatsApp übersprungen (disabled oder Fehler).")
+            print("Mail/WhatsApp ?bersprungen (disabled oder Fehler).")
 
     except Exception as e:
         print(f"Mail-Liste Fehler: {e}")

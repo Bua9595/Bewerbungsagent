@@ -40,6 +40,7 @@ copy .env.example .env   # .env befüllen
 - Standard-Orte: Buelach/Kloten/Zuerich (ASCII; per .env setzbar). Harte Ortsfilter: Titel/Location/Raw-Title muss einen Ort enthalten, sonst Drop.
 - Score/Match: Keywords/Negativliste steuern Scoring; `MIN_SCORE_MAIL` (Default 2) filtert für Mail.
 - Mail-Body: parst jobs.ch/jobup-Multiline-Titel (Arbeitsort/Firma), zeigt Quelle/Match/Score; Soft-Cap `EMAIL_MAX_JOBS` (Default 200).
+- Delta-Mailing: Mail verschickt nur neue Jobs (persistiert in `generated/seen_jobs.json`).
 
 ## Dateien/Ordner
 - `data/jobs.json` – letzter Job-Snapshot
@@ -71,3 +72,11 @@ copy .env.example .env   # .env befüllen
 - `BLACKLIST_KEYWORDS=junior` – Titel-Keywords zum Ausschluss
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` – Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
+- `ALLOWED_LOCATIONS=` – optionale Hard-Allow-Liste; wenn gesetzt, müssen Titel/Ort/Raw-Title einen dieser Werte enthalten
+
+## Final Acceptance (Checkliste)
+- `python tasks.py env-check` ok (SMTP/Profil gesetzt).
+- `python tasks.py verify` ok (Config, compileall, Templates, Dirs vorhanden).
+- `python tasks.py mail-list` schickt nur neue Jobs (Delta), Titel/Firma/Ort korrekt geparst, lokal gefiltert.
+- `python tasks.py prepare-applications` erzeugt DOCX in `out/`, Tracker ergänzt, optional Kopie via `--mirror-sent`/`archive-sent`.
+- Scheduler aktiv (täglich) mit Log; keine Duplikat-Mails über mehrere Tage.

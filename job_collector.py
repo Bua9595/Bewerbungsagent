@@ -130,6 +130,11 @@ EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
 EXPORT_CSV_PATH = os.getenv("EXPORT_CSV_PATH", "generated/jobs_latest.csv")
 MIN_SCORE_MAIL = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
 LOCATION_BOOST_KM = int(os.getenv("LOCATION_BOOST_KM", "15") or 15)
+ALLOWED_LOCATIONS = {
+    x.strip().lower()
+    for x in (os.getenv("ALLOWED_LOCATIONS", "") or "").split(",")
+    if x.strip()
+}
 
 BLACKLIST = {
     x.strip().lower()
@@ -163,6 +168,16 @@ def _is_local(job: Job, search_locations: List[str]) -> bool:
     for loc in search_locations:
         lo = loc.lower()
         if lo and any(lo in t.lower() for t in texts):
+            return True
+    return False
+
+
+def _is_allowed_location(job: Job, allowed: set[str]) -> bool:
+    if not allowed:
+        return True
+    texts = [(job.location or ""), (job.title or ""), (job.raw_title or "")]
+    for a in allowed:
+        if a and any(a in t.lower() for t in texts):
             return True
     return False
 
@@ -338,6 +353,8 @@ def collect_jobs(
                 j.location = l2
 
         if search_locs and not _is_local(j, search_locs):
+            continue
+        if ALLOWED_LOCATIONS and not _is_allowed_location(j, ALLOWED_LOCATIONS):
             continue
 
         if (j.company or "").lower() in BLACKLIST:
