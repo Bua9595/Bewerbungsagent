@@ -123,6 +123,32 @@ def cmd_mail_list(_args=None):
         print(f"Mail-Liste Fehler: {e}")
 
 
+def cmd_archive_sent(args):
+    """
+    Kopiert ein versendetes Anschreiben nach 04_Versendete_Bewerbungen/<Firma>/ (oder --copy-sent-dir).
+    Erwartet eine bestehende DOCX (z.B. aus out/), optional Firmenname override.
+    """
+    src = Path(args.file).expanduser()
+    if not src.exists():
+        print(f"FEHLER: Datei nicht gefunden: {src}")
+        raise SystemExit(1)
+
+    company = args.company
+    if not company:
+        stem = src.stem
+        parts = stem.split("_")
+        if parts:
+            company = parts[0]
+    company = company or "Unbekannt"
+
+    dest_base = Path(args.dest).expanduser() if args.dest else Path.cwd() / "04_Versendete_Bewerbungen"
+    dest_dir = dest_base / _sanitize_filename(company)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / src.name
+    shutil.copy2(src, dest)
+    print(f"Kopie erstellt: {dest}")
+
+
 def cmd_verify(_args=None):
     """
     Lightweight Verify: config check, compileall, presence of key dirs/files.
@@ -141,6 +167,10 @@ def cmd_verify(_args=None):
         if not Path(d).exists():
             ok = False
             print(f"FEHLT: {d}")
+    for tpl in ["T1_ITSup.docx", "T2_Systemtechnik.docx", "T3_Logistik.docx"]:
+        if not (Path("Anschreiben_Templates") / tpl).exists():
+            ok = False
+            print(f"Template fehlt: Anschreiben_Templates/{tpl}")
 
     try:
         subprocess.check_call([sys.executable, "-m", "compileall", "."], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -400,6 +430,10 @@ def main(argv=None):
 
     sub.add_parser("env-check")
     sub.add_parser("verify")
+    arch = sub.add_parser("archive-sent")
+    arch.add_argument("--file", required=True, help="Pfad zur versendeten DOCX (z.B. aus out/)")
+    arch.add_argument("--company", default="", help="Optional Firmenname override")
+    arch.add_argument("--dest", default="", help="Basis-Ordner fuer Kopie (default: 04_Versendete_Bewerbungen)")
     sub.add_parser("gen-templates")
     sub.add_parser("start")
     sub.add_parser("open")

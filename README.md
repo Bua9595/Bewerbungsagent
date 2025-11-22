@@ -32,6 +32,7 @@ copy .env.example .env   # .env befüllen
 - `python tasks.py mail-list` – sammelt Jobs, filtert auf lokale Orte, mailt alle Treffer (Soft-Cap per `EMAIL_MAX_JOBS`)
 - `python tasks.py list` – sammelt und gibt Textliste + CSV aus
 - `python tasks.py prepare-applications [--force-all] [--mirror-sent] [--copy-sent-dir <pfad>]` – erzeugt Anschreiben aus `data/jobs.json` (fit=="OK") in `out/`, tracked in `bewerbungen_tracking.csv`; optional Kopie in `04_Versendete_Bewerbungen/<Firma>/`
+- `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` – manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
 - `python tasks.py gen-templates` – aktualisiert Templates/Tracker-Header
 - `python tasks.py email-test` – SMTP-Test
 
