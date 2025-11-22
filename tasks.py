@@ -191,7 +191,7 @@ def cmd_verify(_args=None):
 # ---------------------------
 
 _COMPANY_HINT_RE = re.compile(
-    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|sàrl|ltd|inc|llc)\b",
+    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|s\u00e0rl|sarl\.?|ltd|inc|llc)\b",
     re.IGNORECASE
 )
 
@@ -201,15 +201,20 @@ _LABEL_RE = re.compile(
 )
 
 _RELDATE_INLINE_RE = re.compile(
-    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+ (tagen|wochen))\b",
+    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+ (stunden?|tagen|wochen|monaten?))\b",
     re.IGNORECASE
 )
 
 _CITY_HINT_RE = re.compile(
-    r"\b(zürich|bülach|kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|genève|geneve|schweiz)\b",
+    r"\b("
+    r"z\u00fcrich|zurich|zuerich|"
+    r"b\u00fclach|buelach|"
+    r"kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|"
+    r"gen\u00e8ve|geneve|"
+    r"schweiz"
+    r")\b",
     re.IGNORECASE
 )
-
 
 def _sanitize_filename(s: str) -> str:
     s = s.strip()

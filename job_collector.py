@@ -103,7 +103,7 @@ def _score_title(title: str) -> Tuple[int, str]:
 # ---------------------------
 
 _COMPANY_HINT_RE = re.compile(
-    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|sàrl|ltd|inc|llc)\b",
+    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|s\u00e0rl|sarl\.?|ltd|inc|llc)\b",
     re.IGNORECASE,
 )
 _LABEL_RE = re.compile(
@@ -111,75 +111,19 @@ _LABEL_RE = re.compile(
     re.IGNORECASE,
 )
 _RELDATE_INLINE_RE = re.compile(
-    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+ (tagen|wochen))\b",
+    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+ (stunden?|tagen|wochen|monaten?))\b",
     re.IGNORECASE,
 )
 _CITY_HINT_RE = re.compile(
-    r"\b(zürich|bülach|kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|genève|geneve|schweiz)\b",
+    r"\b("
+    r"z\u00fcrich|zurich|zuerich|"
+    r"b\u00fclach|buelach|"
+    r"kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|"
+    r"gen\u00e8ve|geneve|"
+    r"schweiz"
+    r")\b",
     re.IGNORECASE,
 )
-
-
-def _normalize_line(l: str) -> str:
-    l = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", l)
-    return l.strip().strip('"').strip()
-
-
-def _is_noise_line(l: str) -> bool:
-    if not l:
-        return True
-    if _LABEL_RE.search(l):
-        return True
-    if _RELDATE_INLINE_RE.search(l):
-        return True
-    return False
-
-
-def _extract_from_multiline_title(raw_title: str) -> Tuple[str, str, str]:
-    """
-    Robustere Heuristik für jobs.ch/jobup title-Blocks:
-    - title enthält Zeit, Jobtitel, Labels, Ort, Firma.
-    - Wir filtern Labels/relative Zeiten.
-    - Jobtitel = erste non-noise Zeile.
-    - Firma = letzte non-noise Zeile mit Rechtsform-Hint, sonst letzte non-noise Zeile.
-    - Ort = Zeile nach "Arbeitsort:" falls vorhanden, sonst erste non-noise Zeile mit City-Hint.
-    """
-    raw_lines = [_normalize_line(x) for x in (raw_title or "").splitlines()]
-    raw_lines = [x for x in raw_lines if x]
-
-    location = ""
-    for i, l in enumerate(raw_lines):
-        if l.lower().startswith("arbeitsort"):
-            if i + 1 < len(raw_lines):
-                location = _normalize_line(raw_lines[i + 1])
-            break
-
-    clean = [l for l in raw_lines if not _is_noise_line(l)]
-
-    job_title = clean[0] if clean else ""
-    company = ""
-
-    for l in reversed(clean):
-        if _COMPANY_HINT_RE.search(l):
-            company = l
-            break
-
-    if not company and len(clean) >= 2:
-        company = clean[-1]
-        if company == job_title:
-            company = ""
-
-    if not location:
-        for l in clean[1:]:
-            if _CITY_HINT_RE.search(l):
-                location = l
-                break
-
-    if location == company:
-        location = ""
-
-    return job_title, company, location
-
 
 TRUTHY = {"1", "true", "t", "y", "yes", "ja", "j"}
 EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
