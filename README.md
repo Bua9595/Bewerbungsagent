@@ -1,97 +1,67 @@
 # Bewerbungsagent
 
-Ein schlanker Helfer, der Job-Suchlinks generiert, einfache Vorlagen schreibt und optionale E‑Mail‑Benachrichtigungen ermöglicht. Alle sensiblen Daten werden ausschließlich über Umgebungsvariablen (.env) geladen – nichts davon liegt im öffentlichen Repo.
+Automatisiert Jobs sammeln -> filtern -> mailen -> Anschreiben erzeugen -> Tracking pflegen. Geheimnisse bleiben in `.env` (nicht im Repo).
 
-## Features
-- Dynamische Such‑URLs für gängige Portale (LinkedIn, Indeed, jobs.ch, usw.)
-- Generische Anschreiben‑Vorlagen mit Profil‑Platzhaltern (Name/Email/LinkedIn)
-- E‑Mail‑Automatisierung über SMTP (optional)
-- Logging mit rotierenden Logfiles (lokal, per .gitignore ausgeschlossen)
+## Finales Ziel und aktueller Stand
+- AG1 Collector: jobs.ch/jobup/Indeed scrapen, normalisieren, dedupen, scoren, lokal filtern; `data/jobs.json` schreiben; Mail mit allen neuen lokalen Treffern. **Status:** laeuft, Mail-Output korrekt, Hardcut auf Orte aktiv.
+- AG2 Applicant: `prepare-applications` liest `data/jobs.json` (fit=="OK"), fuellt DOCX-Templates, schreibt `out/`, tracked in `bewerbungen_tracking.csv`. **Status:** laeuft; Kopie nach `04_Versendete_Bewerbungen/<Firma>/` noch offen.
+- AG3 QA/Betrieb: README/Quickstart, env.example, verify, Scheduler (taeglich). **Status:** README aktualisiert; env.example/verify/Scheduler offen.
 
-## Setup
-1) Python 3.11 installieren und Abhängigkeiten holen
+Roadmap (kurz):
+1) Kopie jeder versendeten Bewerbung nach `04_Versendete_Bewerbungen/<Firma>/...`.
+2) env.example + verify-script + Scheduler fuer `mail-list` taeglich.
+3) Optional: feinere Pendelzeit/PLZ-Filter.
 
-```
+## Quickstart (Windows / PowerShell)
+```pwsh
 python -m venv .venv
-. .venv/bin/activate  # Windows: .venv\Scripts\activate
+.\\.venv\\Scripts\\activate
 pip install -r requirements.txt
+copy .env.example .env   # .env befuellen
 ```
 
-2) .env anlegen (lokal, wird ignoriert) – Beispiel:
+### .env ausfuellen (Minimal)
+- `SENDER_EMAIL`, `SENDER_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT` (Gmail: smtp.gmail.com / 587, App-Passwort)
+- `RECIPIENT_EMAILS` (Komma-getrennt)
+- `SEARCH_LOCATIONS=Buelach` (oder nahe Orte), `LOCATION_RADIUS_KM=25`
+- Optional: `SEARCH_KEYWORDS`, `ENABLED_SOURCES`, `EMAIL_MAX_JOBS`
 
-```
-cp .env.example .env  # Windows: copy .env.example .env
-```
+## Nutzung (haeufigste Commands)
+- `python tasks.py env-check` – zeigt SMTP/Empfaenger/Profil
+- `python tasks.py mail-list` – sammelt Jobs, filtert auf lokale Orte, mailt alle Treffer (Soft-Cap per `EMAIL_MAX_JOBS`)
+- `python tasks.py list` – sammelt und gibt Textliste + CSV aus
+- `python tasks.py prepare-applications [--force-all]` – erzeugt Anschreiben aus `data/jobs.json` (fit=="OK") in `out/`, tracked in `bewerbungen_tracking.csv`
+- `python tasks.py gen-templates` – aktualisiert Templates/Tracker-Header
+- `python tasks.py email-test` – SMTP-Test
 
-Dann `.env` befüllen:
-- SENDER_EMAIL, SENDER_PASSWORD, SMTP_SERVER, SMTP_PORT
-- RECIPIENT_EMAILS (Komma‑getrennt)
-- GROQ_API_KEY (falls genutzt)
-- PROFILE_NAME, PROFILE_EMAIL, PROFILE_LINKEDIN
-- SEARCH_LOCATIONS, SEARCH_KEYWORDS, LOCATION_RADIUS_KM, AUTO_OPEN_PORTALS (j/n)
+## Verhalten / Filter
+- Standard-Orte: Buelach/Kloten/Zuerich (ASCII; per .env setzbar). Harte Ortsfilter: Titel/Location/Raw-Title muss einen Ort enthalten, sonst Drop.
+- Score/Match: Keywords/Negativliste steuern Scoring; `MIN_SCORE_MAIL` (Default 2) filtert fuer Mail.
+- Mail-Body: parst jobs.ch/jobup-Multiline-Titel (Arbeitsort/Firma), zeigt Quelle/Match/Score; Soft-Cap `EMAIL_MAX_JOBS` (Default 200).
 
-Hinweis Gmail/Passwörter:
-- Für Gmail‑SMTP nutze ein App‑Passwort (empfohlen, siehe unten). Normale Passwörter sollten nie geteilt werden; durch `.env` bleiben sie nur lokal.
+## Dateien/Ordner
+- `data/jobs.json` – letzter Job-Snapshot
+- `Anschreiben_Templates/` – Templates (`T1_ITSup.docx`, `T2_Systemtechnik.docx`, `T3_Logistik.docx`)
+- `out/` – generierte Anschreiben
+- `bewerbungen_tracking.csv` – Tracker (wird bei Bedarf angelegt/erweitert)
+- `04_Versendete_Bewerbungen/` – Ziel fuer Kopien nach Versand (noch umzusetzen)
 
-## Verwendung
-Schnellprüfung (lädt Config, erzeugt Vorlagen/CSV bei Bedarf):
+## Troubleshooting
+- Encoding: Repo ist UTF-8; wenn PowerShell � zeigt, liegt es an der Konsole, nicht an den Dateien.
+- Zu wenige Jobs: `SEARCH_LOCATIONS` erweitern oder `MIN_SCORE_MAIL` senken; Cap per `EMAIL_MAX_JOBS`.
+- Zu viele/weite Jobs: Orte eng fassen, `LOCATION_RADIUS_KM` niedrig halten; Hardcut aktiv.
+- Leere Firma/Ort in Mail: sicherstellen, dass `raw_title` ankommt (collect_jobs tut das). Falls nicht, Payload pruefen.
+- SMTP: Bei 2FA Gmail App-Passwort nutzen; Outlook: `smtp-mail.outlook.com:587`. `python tasks.py email-test` prueft Zugang.
 
-```
-python quick_check.py
-```
+## Datenschutz
+- `.env`, Logs, generierte Bewerbungen sind per `.gitignore` ausgeschlossen. Keine Geheimnisse committen.
 
-Portale/Links aktualisieren und optional im Browser öffnen:
-
-```
-python -m pip install -r requirements.txt
-python tasks.py start            # Aktualisiert Dateien, zeigt Links, fragt optional nach Öffnen
-python tasks.py open             # Öffnet Portale direkt
-python tasks.py env-check        # Zeigt Konfig-Zusammenfassung (ohne Geheimnisse)
-python tasks.py gen-templates    # Schreibt Vorlagen/Tracking-Datei
-python tasks.py email-test       # Verbindungs-Test (SMTP) – optional
-python tasks.py list             # Jobs sammeln, sortiert anzeigen (+ CSV Export)
-python tasks.py mail-list        # Gefilterte Liste per E-Mail senden (+ CSV, optional WhatsApp)
-```
-
-## Warum App‑Passwort/OAuth?
-- SMTP‑Server verlangen Authentifizierung. Für Gmail ist das normale Konto‑Passwort riskant. App‑Passwörter (bei aktivierter 2FA) sind auf einzelne Apps beschränkt und jederzeit widerrufbar.
-- OAuth2 ist moderner und vermeidet Passwörter, ist aber aufwendiger. Für einfache SMTP‑Benachrichtigungen reicht ein App‑Passwort.
-
-### Gmail App‑Passwort erstellen
-1. Unter "Google Konto" → Sicherheit → 2‑Stufen‑Verifizierung aktivieren
-2. Danach: "App‑Passwörter" → App „Mail“ und Gerät „Sonstiges (z. B. Bewerbungsagent)“ wählen
-3. 16‑stelliges App‑Passwort kopieren → in `.env` als `SENDER_PASSWORD=` eintragen
-4. SMTP‑Werte: `SMTP_SERVER=smtp.gmail.com`, `SMTP_PORT=587`
-
-### GROQ API Key rotieren
-1. https://console.groq.com → API Keys → alten Key revoke, neuen Key erstellen
-2. Neuen Key in `.env` als `GROQ_API_KEY=` eintragen (nicht committen)
-
-## CI (GitHub Actions)
-- Lint (Style‑Hinweise) und Checks (baubare Python‑Dateien, Import‑Smoke‑Test)
-- Workflow liegt unter `.github/workflows/ci.yml` und läuft bei Push/PR
-- Lint ist in diesem Projekt "soft" (nicht blockierend). Zum Strenger‑Machen siehe Kommentare im Workflow.
-
-## Sicherheit & Privates
-- `.gitignore` schließt `.env`, Logs, generierte Vorlagen/CSV und persönliche Dokumente (PDF/DOCX) aus
-- Falls sensible Dateien jemals gepusht wurden, Historie mit `git filter-repo` oder BFG bereinigen
-
-## Lizenz / Hinweise
-- Nur zu Demo-/Privatzwecken. Webseitenbedingungen der Portale beachten.
-
-## Erweiterte Einstellungen (optional)
-
-Nicht-sensible ENV für Jobliste/Scoring:
+## Erweiterte ENV (optional)
 - `EXPORT_CSV=true` – exportiert Treffer nach `generated/jobs_latest.csv`
-- `EXPORT_CSV_PATH=generated/jobs_latest.csv` – Zielpfad für CSV-Export
-- `MIN_SCORE_MAIL=2` – Mindestscore für E-Mail-Versand
+- `EXPORT_CSV_PATH=generated/jobs_latest.csv` – Zielpfad fuer CSV
+- `MIN_SCORE_MAIL=2` – Mindestscore fuer Mail-Versand
 - `LOCATION_BOOST_KM=15` – heuristischer Boost (String-Match Location)
-- `BLACKLIST_COMPANIES=` – Komma‑getrennte Firmen, die ignoriert werden
-- `BLACKLIST_KEYWORDS=junior` – Titel‑Keywords, die ausgeschlossen werden (z. B. "junior,praktikum")
-
-WhatsApp Cloud API (optional; Standard: aus):
-- `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
-  – Wird nur genutzt, wenn aktiviert; ist kein Ersatz für E‑Mail.
-
-Portale/Adapter steuern:
-- `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` – Komma‑Liste; leer bedeutet alle aktiv
+- `BLACKLIST_COMPANIES=` – Komma-Liste ignorierter Firmen
+- `BLACKLIST_KEYWORDS=junior` – Titel-Keywords zum Ausschluss
+- `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` – Komma-Liste; leer = alle aktiv
+- WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
