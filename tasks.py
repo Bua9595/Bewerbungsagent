@@ -17,6 +17,9 @@ import argparse
 import os
 import re
 import json
+import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -118,6 +121,38 @@ def cmd_mail_list(_args=None):
 
     except Exception as e:
         print(f"Mail-Liste Fehler: {e}")
+
+
+def cmd_verify(_args=None):
+    """
+    Lightweight Verify: config check, compileall, presence of key dirs/files.
+    """
+    ok = True
+    try:
+        from config import config
+        config.validate_config()
+        print("Config: OK")
+    except Exception as e:
+        ok = False
+        print(f"Config-Check fehlgeschlagen: {e}")
+
+    required_dirs = ["Anschreiben_Templates", "out", "data"]
+    for d in required_dirs:
+        if not Path(d).exists():
+            ok = False
+            print(f"FEHLT: {d}")
+
+    try:
+        subprocess.check_call([sys.executable, "-m", "compileall", "."], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("compileall: OK")
+    except Exception as e:
+        ok = False
+        print(f"compileall fehlgeschlagen: {e}")
+
+    if ok:
+        print("Verify: OK")
+    else:
+        print("Verify: FEHLER")
 
 
 
@@ -292,6 +327,11 @@ def cmd_prepare_applications(args):
     stamp = datetime.now().strftime("%Y%m%d")
 
     prepared = 0
+    sent_base = Path(args.copy_sent_dir) if args.copy_sent_dir else None
+    if args.mirror_sent and not sent_base:
+        sent_base = proj / "04_Versendete_Bewerbungen"
+    if sent_base and not sent_base.exists():
+        sent_base.mkdir(parents=True, exist_ok=True)
     for job in jobs:
         fit = (job.get("fit") or "").upper()
         if not args.force_all and fit != "OK":
@@ -338,6 +378,12 @@ def cmd_prepare_applications(args):
         out_path = out_dir / out_name
         doc.save(str(out_path))
 
+        # Optional: Kopie in 04_Versendete_Bewerbungen/<Firma>/...
+        if sent_base:
+            target_dir = sent_base / _sanitize_filename(company or "Unbekannt")
+            target_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(out_path, target_dir / out_name)
+
         row = f'{today},"{company}","{job_title}","{source}","{url}","Erstellt",""\n'
         with tracker_path.open("a", encoding="utf-8") as f:
             f.write(row)
@@ -353,6 +399,7 @@ def main(argv=None):
     sub = p.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("env-check")
+    sub.add_parser("verify")
     sub.add_parser("gen-templates")
     sub.add_parser("start")
     sub.add_parser("open")
@@ -367,6 +414,16 @@ def main(argv=None):
     prep.add_argument("--templates", dest="templates_dir", default="", help="Templates-Ordner")
     prep.add_argument("--tracker", default="", help="Tracker CSV")
     prep.add_argument("--force-all", action="store_true", help="Alle Jobs verarbeiten, egal fit")
+    prep.add_argument(
+        "--mirror-sent",
+        action="store_true",
+        help="Optional Kopie der erzeugten Anschreiben in 04_Versendete_Bewerbungen/<Firma>/ ablegen",
+    )
+    prep.add_argument(
+        "--copy-sent-dir",
+        default="",
+        help="Alternativer Basis-Ordner fuer die Kopien (default: 04_Versendete_Bewerbungen im Projekt)",
+    )
 
     args = p.parse_args(argv)
 
