@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
-Einfache Task-CLI für den Bewerbungsagenten.
+Einfache Task-CLI fÃ¼r den Bewerbungsagenten.
 
 Beispiele:
   python tasks.py env-check
@@ -64,7 +64,7 @@ def cmd_open(_args=None):
 
 
 def cmd_email_test(_args=None):
-    # nutzt das getestete Testskript, das (bool, lines) zurückgibt
+    # nutzt das getestete Testskript, das (bool, lines) zurÃ¼ckgibt
     from test_email_config import test_email_connection
 
     success, output_lines = test_email_connection()
@@ -75,13 +75,15 @@ def cmd_email_test(_args=None):
 
 
 def cmd_list(_args=None):
-    from job_collector import collect_jobs, format_jobs_plain, export_csv
+    from job_collector import collect_jobs, export_csv
     jobs = collect_jobs()
     if not jobs:
-        print("Keine Treffer. CSV/Mail übersprungen.")
+        print("Keine Treffer. CSV/Mail ?bersprungen.")
         return
     export_csv(jobs)
-    print(format_jobs_plain(jobs))
+    for i, j in enumerate(jobs[:20], 1):
+        print(f"{i:02d}. [{j.match:^5}] {j.title} - {j.company} - {j.location}")
+        print(f"    {j.link}")
 
 
 def cmd_mail_list(_args=None):
@@ -263,8 +265,8 @@ def _is_noise_line(line: str) -> bool:
 
 def _extract_from_multiline_title(raw_title: str):
     """
-    Robustere Heuristik für jobs.json title:
-    - title enthält oft Sammeltext: Zeit, Jobtitel, Labels, Ort, Firma.
+    Robustere Heuristik fÃ¼r jobs.json title:
+    - title enthÃ¤lt oft Sammeltext: Zeit, Jobtitel, Labels, Ort, Firma.
     - Wir filtern Labels/relative Zeiten auch wenn inline.
     - Jobtitel = erste non-noise Zeile.
     - Firma = letzte non-noise Zeile mit Rechtsform (AG/GmbH/SA/...) sonst letzte non-noise Zeile.
@@ -350,7 +352,7 @@ def cmd_prepare_applications(args):
     """
     Liest data/jobs.json, nimmt fit=="OK" (oder --force-all),
     wendet .docx Templates an, schreibt out/*.docx und
-    hängt neue Zeilen an bewerbungen_tracking.csv.
+    hÃ¤ngt neue Zeilen an bewerbungen_tracking.csv.
     """
     from docx import Document
 
@@ -424,7 +426,7 @@ def cmd_prepare_applications(args):
         doc = Document(str(template_path))
 
         mapping = {
-            "<Ort>": location or "Bülach",
+            "<Ort>": location or "BÃ¼lach",
             "<Datum>": today,
             "<JOBTITEL>": job_title,
             "<FIRMA>": company,

@@ -32,6 +32,7 @@ class Job:
     score: int = 0
     match: str = "unknown"  # exact | good | weak | unknown
     date: str = ""
+    fit: str = ""
 
 
 def _mk_driver(headless: bool = True) -> webdriver.Chrome:
@@ -96,6 +97,13 @@ def _score_title(title: str) -> Tuple[int, str]:
         label = "weak"
 
     return score, label
+
+
+def compute_fit(match: str, score: int, min_score_apply: int) -> str:
+    m = (match or "").lower()
+    if m in {"exact", "good"} and score >= min_score_apply:
+        return "OK"
+    return "DECISION"
 
 
 # ---------------------------
@@ -197,6 +205,8 @@ ALLOWED_LOCATIONS = {
     for x in (os.getenv("ALLOWED_LOCATIONS", "") or "").split(",")
     if x.strip()
 }
+AUTO_FIT_ENABLED = str(os.getenv("AUTO_FIT_ENABLED", "false")).lower() in TRUTHY
+MIN_SCORE_APPLY = float(os.getenv("MIN_SCORE_APPLY", "1") or 1)
 
 BLACKLIST = {
     x.strip().lower()
@@ -444,6 +454,9 @@ def collect_jobs(
             j.match = "good"
         else:
             j.match = j.match or "weak"
+
+        if AUTO_FIT_ENABLED:
+            j.fit = compute_fit(j.match, j.score, MIN_SCORE_APPLY)
 
         unique.append(j)
 

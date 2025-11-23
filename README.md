@@ -73,6 +73,7 @@ copy .env.example .env   # .env befüllen
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` – Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
 - `ALLOWED_LOCATIONS=` – optionale Hard-Allow-Liste; wenn gesetzt, müssen Titel/Ort/Raw-Title einen dieser Werte enthalten
+- `AUTO_FIT_ENABLED=false`, `MIN_SCORE_APPLY=1` – wenn aktiv, setzt fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
 
 ## Final Acceptance (Checkliste)
 - `python tasks.py env-check` ok (SMTP/Profil gesetzt).
