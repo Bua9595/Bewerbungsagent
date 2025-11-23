@@ -189,12 +189,12 @@ def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
                 continue
 
             # erste brauchbare Zeile als Jobtitel (ohne relative Zeit/Labels)
-            lines = [l.strip() for l in txt.splitlines() if l.strip()]
+            lines = [line.strip() for line in txt.splitlines() if line.strip()]
             title = ""
-            for l in lines:
-                if _LINE_LABEL_RE.search(l) or _LINE_RELDATE_RE.search(l):
+            for line in lines:
+                if _LINE_LABEL_RE.search(line) or _LINE_RELDATE_RE.search(line):
                     continue
-                title = l
+                title = line
                 break
             if not title:
                 title = lines[0] if lines else txt

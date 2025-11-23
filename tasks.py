@@ -207,7 +207,6 @@ def cmd_verify(_args=None):
         print("Verify: FEHLER")
 
 
-
 # ---------------------------
 # prepare-applications LOGIK
 # ---------------------------
@@ -238,6 +237,7 @@ _CITY_HINT_RE = re.compile(
     re.IGNORECASE
 )
 
+
 def _sanitize_filename(s: str) -> str:
     s = s.strip()
     s = re.sub(r"[\\/:*?\"<>|]", "_", s)
@@ -245,18 +245,18 @@ def _sanitize_filename(s: str) -> str:
     return s[:120] if len(s) > 120 else s
 
 
-def _normalize_line(l: str) -> str:
+def _normalize_line(line: str) -> str:
     # entfernt z.B. '01. [exact]' am Zeilenanfang
-    l = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", l)
-    return l.strip().strip('"').strip()
+    line = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", line)
+    return line.strip().strip('"').strip()
 
 
-def _is_noise_line(l: str) -> bool:
-    if not l:
+def _is_noise_line(line: str) -> bool:
+    if not line:
         return True
-    if _LABEL_RE.search(l):
+    if _LABEL_RE.search(line):
         return True
-    if _RELDATE_INLINE_RE.search(l):
+    if _RELDATE_INLINE_RE.search(line):
         return True
     return False
 
@@ -270,26 +270,26 @@ def _extract_from_multiline_title(raw_title: str):
     - Firma = letzte non-noise Zeile mit Rechtsform (AG/GmbH/SA/...) sonst letzte non-noise Zeile.
     - Ort = Zeile nach "Arbeitsort:" falls vorhanden, sonst erste non-noise Zeile mit City-Hint.
     """
-    raw_lines = [ _normalize_line(x) for x in (raw_title or "").splitlines() ]
+    raw_lines = [_normalize_line(x) for x in (raw_title or "").splitlines()]
     raw_lines = [x for x in raw_lines if x]
 
     # location: explizit nach "Arbeitsort"
     location = ""
-    for i, l in enumerate(raw_lines):
-        if l.lower().startswith("arbeitsort"):
+    for i, line in enumerate(raw_lines):
+        if line.lower().startswith("arbeitsort"):
             if i + 1 < len(raw_lines):
                 location = _normalize_line(raw_lines[i + 1])
             break
 
-    clean = [l for l in raw_lines if not _is_noise_line(l)]
+    clean = [line for line in raw_lines if not _is_noise_line(line)]
 
     job_title = clean[0] if clean else ""
     company = ""
 
     # Firma: letzte Zeile mit Rechtsform-Hint
-    for l in reversed(clean):
-        if _COMPANY_HINT_RE.search(l):
-            company = l
+    for line in reversed(clean):
+        if _COMPANY_HINT_RE.search(line):
+            company = line
             break
 
     # fallback: letzte clean Zeile (wenn nicht schon job_title)
@@ -300,9 +300,9 @@ def _extract_from_multiline_title(raw_title: str):
 
     # fallback location via city hint
     if not location:
-        for l in clean[1:]:
-            if _CITY_HINT_RE.search(l):
-                location = l
+        for line in clean[1:]:
+            if _CITY_HINT_RE.search(line):
+                location = line
                 break
 
     if location == company:

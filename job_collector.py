@@ -125,6 +125,68 @@ _CITY_HINT_RE = re.compile(
     re.IGNORECASE,
 )
 
+
+def _normalize_line(line: str) -> str:
+    line = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", line)
+    return line.strip().strip('"').strip()
+
+
+def _is_noise_line(line: str) -> bool:
+    if not line:
+        return True
+    if _LABEL_RE.search(line):
+        return True
+    if _RELDATE_INLINE_RE.search(line):
+        return True
+    return False
+
+
+def _extract_from_multiline_title(raw_title: str) -> Tuple[str, str, str]:
+    """
+    Robustere Heuristik f\u00fcr jobs.ch/jobup title-Blocks:
+    - title enth\u00e4lt Zeit, Jobtitel, Labels, Ort, Firma.
+    - Wir filtern Labels/relative Zeiten.
+    - Jobtitel = erste non-noise Zeile.
+    - Firma = letzte non-noise Zeile mit Rechtsform-Hint, sonst letzte non-noise Zeile.
+    - Ort = Zeile nach "Arbeitsort:" falls vorhanden, sonst erste non-noise Zeile mit City-Hint.
+    """
+    raw_lines = [_normalize_line(x) for x in (raw_title or "").splitlines()]
+    raw_lines = [x for x in raw_lines if x]
+
+    location = ""
+    for i, line in enumerate(raw_lines):
+        if line.lower().startswith("arbeitsort"):
+            if i + 1 < len(raw_lines):
+                location = _normalize_line(raw_lines[i + 1])
+            break
+
+    clean = [line for line in raw_lines if not _is_noise_line(line)]
+
+    job_title = clean[0] if clean else ""
+    company = ""
+
+    for line in reversed(clean):
+        if _COMPANY_HINT_RE.search(line):
+            company = line
+            break
+
+    if not company and len(clean) >= 2:
+        company = clean[-1]
+        if company == job_title:
+            company = ""
+
+    if not location:
+        for line in clean[1:]:
+            if _CITY_HINT_RE.search(line):
+                location = line
+                break
+
+    if location == company:
+        location = ""
+
+    return job_title, company, location
+
+
 TRUTHY = {"1", "true", "t", "y", "yes", "ja", "j"}
 EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
 EXPORT_CSV_PATH = os.getenv("EXPORT_CSV_PATH", "generated/jobs_latest.csv")
@@ -365,7 +427,7 @@ def collect_jobs(
         if j.source in ("jobs.ch", "jobup.ch"):
             link_has_digit = bool(re.search(r"\d", j.link))
             tail = "/".join(j.link.rstrip("/").split("/")[-2:])
-            is_category = "stellenangebote" in tail and not "detail" in tail
+            is_category = "stellenangebote" in tail and "detail" not in tail
             if (not link_has_digit) or is_category:
                 continue
 
