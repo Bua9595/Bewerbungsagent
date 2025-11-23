@@ -75,14 +75,17 @@ def cmd_email_test(_args=None):
 
 
 def cmd_list(_args=None):
-    from job_collector import collect_jobs, export_csv
+    from job_collector import collect_jobs, export_csv, export_json
     jobs = collect_jobs()
     if not jobs:
         print("Keine Treffer. CSV/Mail ?bersprungen.")
         return
     export_csv(jobs)
+    export_json(jobs)
     for i, j in enumerate(jobs[:20], 1):
-        print(f"{i:02d}. [{j.match:^5}] {j.title} - {j.company} - {j.location}")
+        company = j.company or "Firma unbekannt"
+        location = j.location or "Ort unbekannt"
+        print(f"{i:02d}. [{j.match:^5}] {j.title} - {company} - {location}")
         print(f"    {j.link}")
 
 
@@ -93,7 +96,7 @@ def cmd_mail_list(_args=None):
     nimmt er die Top-N, damit nie "0 Treffer" trotz Roh-Funden passiert.
     """
     try:
-        from job_collector import collect_jobs, _norm_key
+        from job_collector import collect_jobs, _norm_key, export_json
         from email_automation import email_automation
 
         seen_path = Path("generated/seen_jobs.json")
@@ -109,6 +112,7 @@ def cmd_mail_list(_args=None):
         if not rows:
             print("Keine Treffer insgesamt. Mail/WhatsApp ?bersprungen.")
             return
+        export_json(rows)
 
         min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
 
@@ -354,6 +358,9 @@ def cmd_prepare_applications(args):
     wendet .docx Templates an, schreibt out/*.docx und
     hÃ¤ngt neue Zeilen an bewerbungen_tracking.csv.
     """
+    from job_collector import compute_fit
+    auto_fit = str(os.getenv("AUTO_FIT_ENABLED", "false")).lower() in {"1", "true", "t", "yes", "y", "ja", "j"}
+    min_score_apply = float(os.getenv("MIN_SCORE_APPLY", "1") or 1)
     from docx import Document
 
     proj = Path(args.proj).resolve() if args.proj else Path.cwd()
@@ -393,6 +400,14 @@ def cmd_prepare_applications(args):
         sent_base.mkdir(parents=True, exist_ok=True)
     for job in jobs:
         fit = (job.get("fit") or "").upper()
+        if auto_fit:
+            score_val = job.get("score") or 0
+            try:
+                score_val = float(score_val)
+            except Exception:
+                score_val = 0
+            fit = compute_fit(job.get("match", ""), score_val, min_score_apply)
+            job["fit"] = fit
         if not args.force_all and fit != "OK":
             continue
 

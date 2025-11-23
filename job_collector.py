@@ -6,6 +6,7 @@ from typing import List, Tuple
 import csv
 import os
 import re
+import json
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -261,6 +262,28 @@ def _norm_key(title: str, company: str, link: str) -> str:
     return f"{t}|{c}|{lnk}"
 
 
+def export_json(rows: List[Job], path: str | None = None) -> None:
+    out_path = Path(path or Path("data") / "jobs.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    serializable = []
+    for j in rows:
+        serializable.append(
+            {
+                "title": j.title,
+                "raw_title": j.raw_title,
+                "company": j.company,
+                "location": j.location,
+                "link": j.link,
+                "source": j.source,
+                "match": j.match,
+                "score": j.score,
+                "date": j.date,
+                "fit": getattr(j, "fit", ""),
+            }
+        )
+    out_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def _collect_indeed(
     driver: webdriver.Chrome,
     url: str,
@@ -467,8 +490,16 @@ def collect_jobs(
 def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:
     out: List[str] = []
     for i, j in enumerate(jobs[:top], 1):
+        if (not j.company or not j.location) and ("\n" in (j.raw_title or "") or "Arbeitsort" in (j.raw_title or "")):
+            t2, c2, l2 = _extract_from_multiline_title(j.raw_title)
+            if t2:
+                j.title = t2
+            if not j.company and c2:
+                j.company = c2
+            if not j.location and l2:
+                j.location = l2
         out.append(
-            f"{i:02d}. [{j.match:^5}] {j.title} — {j.company} — {j.location}\n"
+            f"{i:02d}. [{j.match:^5}] {j.title} - {j.company} - {j.location}\n"
             f"    {j.link}"
         )
     return "\n".join(out) if out else "Keine Treffer."
