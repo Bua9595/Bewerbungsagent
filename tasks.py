@@ -83,8 +83,21 @@ def cmd_list(_args=None):
     export_csv(jobs)
     export_json(jobs)
     for i, j in enumerate(jobs[:20], 1):
-        company = j.company or "Firma unbekannt"
-        location = j.location or "Ort unbekannt"
+        company = j.company
+        location = j.location
+        if (not company or not location) and (("\n" in (j.raw_title or "")) or ("Arbeitsort" in (j.raw_title or ""))):
+            from job_collector import _extract_from_multiline_title
+
+            t2, c2, l2 = _extract_from_multiline_title(j.raw_title or j.title)
+            if t2:
+                j.title = t2
+            if not company and c2:
+                company = c2
+            if not location and l2:
+                location = l2
+
+        company = company or "Firma unbekannt"
+        location = location or "Ort unbekannt"
         print(f"{i:02d}. [{j.match:^5}] {j.title} - {company} - {location}")
         print(f"    {j.link}")
 

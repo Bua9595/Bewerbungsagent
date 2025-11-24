@@ -267,12 +267,26 @@ def export_json(rows: List[Job], path: str | None = None) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     serializable = []
     for j in rows:
+        title = j.title
+        company = j.company
+        location = j.location
+        raw_title = j.raw_title
+
+        if (not company or not location) and (("\n" in (raw_title or "")) or ("Arbeitsort" in (raw_title or ""))):
+            t2, c2, l2 = _extract_from_multiline_title(raw_title or title)
+            if t2:
+                title = t2
+            if not company and c2:
+                company = c2
+            if not location and l2:
+                location = l2
+
         serializable.append(
             {
-                "title": j.title,
-                "raw_title": j.raw_title,
-                "company": j.company,
-                "location": j.location,
+                "title": title,
+                "raw_title": raw_title,
+                "company": company,
+                "location": location,
                 "link": j.link,
                 "source": j.source,
                 "match": j.match,
