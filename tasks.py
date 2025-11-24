@@ -85,7 +85,7 @@ def cmd_list(_args=None):
     for i, j in enumerate(jobs[:20], 1):
         company = j.company
         location = j.location
-        if (not company or not location) and (("\n" in (j.raw_title or "")) or ("Arbeitsort" in (j.raw_title or ""))):
+        if (not company or not location) and (j.raw_title or j.title):
             from job_collector import _extract_from_multiline_title
 
             t2, c2, l2 = _extract_from_multiline_title(j.raw_title or j.title)

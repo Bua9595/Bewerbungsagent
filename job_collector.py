@@ -272,7 +272,7 @@ def export_json(rows: List[Job], path: str | None = None) -> None:
         location = j.location
         raw_title = j.raw_title
 
-        if (not company or not location) and (("\n" in (raw_title or "")) or ("Arbeitsort" in (raw_title or ""))):
+        if (not company or not location) and (raw_title or title):
             t2, c2, l2 = _extract_from_multiline_title(raw_title or title)
             if t2:
                 title = t2
@@ -449,11 +449,8 @@ def collect_jobs(
 
     for j in all_jobs:
         # Normalize jobs.ch/jobup multi-line titles into fields
-        if (
-            (not j.company or not j.location)
-            and (("\n" in (j.title or "")) or ("Arbeitsort" in (j.title or "")))
-        ):
-            t2, c2, l2 = _extract_from_multiline_title(j.title)
+        if (not j.company or not j.location) and (j.title or j.raw_title):
+            t2, c2, l2 = _extract_from_multiline_title(j.raw_title or j.title)
             if t2:
                 j.title = t2
             if not j.company and c2:
