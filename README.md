@@ -38,46 +38,55 @@ copy .env.example .env   # .env befüllen
 
 ## Verhalten / Filter
 - Standard-Orte: Buelach/Kloten/Zuerich (ASCII; per .env setzbar). Harte Ortsfilter: Titel/Location/Raw-Title muss einen Ort enthalten, sonst Drop.
-- Score/Match: Keywords/Negativliste steuern Scoring; `MIN_SCORE_MAIL` (Default 2) filtert für Mail.
+- Score/Match: Keywords/Negativliste steuern Scoring; `MIN_SCORE_MAIL` (Default 2) filtert fuer Mail.
 - Mail-Body: parst jobs.ch/jobup-Multiline-Titel (Arbeitsort/Firma), zeigt Quelle/Match/Score; Soft-Cap `EMAIL_MAX_JOBS` (Default 200).
 - Delta-Mailing: Mail verschickt nur neue Jobs (persistiert in `generated/seen_jobs.json`).
 
+### Auto-Fit & Filter
+- `AUTO_FIT_ENABLED=true`, `MIN_SCORE_APPLY=0.6` -> fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
+- `ALLOWED_LOCATIONS` filtert strikt nach normalisiertem Ort (kommagetrennt, z.B. `Buelach,Zuerich,Kloten,Winterthur,Baden,Zug`).
+- Typische Entry Points:
+  - Suche + Mail: `python tasks.py mail-list`
+  - Manuelle Liste: `python tasks.py list`
+  - Bewerbungen erstellen: `python tasks.py prepare-applications`
+
 ## Dateien/Ordner
-- `data/jobs.json` – letzter Job-Snapshot
-- `Anschreiben_Templates/` – Templates (`T1_ITSup.docx`, `T2_Systemtechnik.docx`, `T3_Logistik.docx`)
-- `out/` – generierte Anschreiben
-- `bewerbungen_tracking.csv` – Tracker (wird bei Bedarf angelegt/erweitert)
-- `04_Versendete_Bewerbungen/` – Ziel für Kopien nach Versand (wird bei `--mirror-sent` genutzt, sonst manuell)
+- `data/jobs.json` - letzter Job-Snapshot
+- `Anschreiben_Templates/` - Templates (`T1_ITSup.docx`, `T2_Systemtechnik.docx`, `T3_Logistik.docx`)
+- `out/` - generierte Anschreiben
+- `bewerbungen_tracking.csv` - Tracker (wird bei Bedarf angelegt/erweitert)
+- `04_Versendete_Bewerbungen/` - Ziel fuer Kopien nach Versand (wird bei `--mirror-sent` genutzt, sonst manuell)
 
 ## Troubleshooting
-- Encoding: Repo ist UTF-8; wenn PowerShell � zeigt, liegt es an der Konsole, nicht an den Dateien.
+- Encoding: Repo ist UTF-8; wenn PowerShell ??? zeigt, liegt es an der Konsole, nicht an den Dateien.
 - Zu wenige Jobs: `SEARCH_LOCATIONS` erweitern oder `MIN_SCORE_MAIL` senken; Cap per `EMAIL_MAX_JOBS`.
 - Zu viele/weite Jobs: Orte eng fassen, `LOCATION_RADIUS_KM` niedrig halten; Hardcut aktiv.
-- Leere Firma/Ort in Mail: sicherstellen, dass `raw_title` ankommt (collect_jobs tut das). Falls nicht, Payload prüfen.
-- SMTP: Bei 2FA Gmail App-Passwort nutzen; Outlook: `smtp-mail.outlook.com:587`. `python tasks.py email-test` prüft Zugang.
+- Leere Firma/Ort in Mail: sicherstellen, dass `raw_title` ankommt (collect_jobs tut das). Falls nicht, Payload pruefen.
+- SMTP: Bei 2FA Gmail App-Passwort nutzen; Outlook: `smtp-mail.outlook.com:587`. `python tasks.py email-test` prueft Zugang.
 
 ## Scheduler (optional, Windows)
-- Task Scheduler: Aktion `Program/Script: powershell`, Argument `-Command "cd <pfad-zum-projekt>; .\\.venv\\Scripts\\activate; python .\\tasks.py mail-list"`, Trigger täglich.
-- Log-Ausgabe umleiten, falls nötig: `...; python .\\tasks.py mail-list *> logs\\mail-list.log`
+- Task Scheduler: Aktion `Program/Script: powershell`, Argument `-Command "cd <pfad-zum-projekt>; .\.venv\Scripts\activate; python .\tasks.py mail-list"`, Trigger taeglich.
+- Log-Ausgabe umleiten, falls noetig: `...; python .\tasks.py mail-list *> logs\mail-list.log`
+- `tools/run_mail_list.cmd` ist ein lokales Beispiel; in anderen Umgebungen (z.B. AG/Cron) direkt `python tasks.py mail-list` zyklisch ausfuehren.
 
 ## Datenschutz
 - `.env`, Logs, generierte Bewerbungen sind per `.gitignore` ausgeschlossen. Keine Geheimnisse committen.
 
 ## Erweiterte ENV (optional)
-- `EXPORT_CSV=true` – exportiert Treffer nach `generated/jobs_latest.csv`
-- `EXPORT_CSV_PATH=generated/jobs_latest.csv` – Zielpfad für CSV
-- `MIN_SCORE_MAIL=2` – Mindestscore für Mail-Versand
-- `LOCATION_BOOST_KM=15` – heuristischer Boost (String-Match Location)
-- `BLACKLIST_COMPANIES=` – Komma-Liste ignorierter Firmen
-- `BLACKLIST_KEYWORDS=junior` – Titel-Keywords zum Ausschluss
-- `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` – Komma-Liste; leer = alle aktiv
+- `EXPORT_CSV=true` - exportiert Treffer nach `generated/jobs_latest.csv`
+- `EXPORT_CSV_PATH=generated/jobs_latest.csv` - Zielpfad fuer CSV
+- `MIN_SCORE_MAIL=2` - Mindestscore fuer Mail-Versand
+- `LOCATION_BOOST_KM=15` - heuristischer Boost (String-Match Location)
+- `BLACKLIST_COMPANIES=` - Komma-Liste ignorierter Firmen
+- `BLACKLIST_KEYWORDS=junior` - Titel-Keywords zum Ausschluss
+- `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` - Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
-- `ALLOWED_LOCATIONS=` – optionale Hard-Allow-Liste; wenn gesetzt, müssen Titel/Ort/Raw-Title einen dieser Werte enthalten
-- `AUTO_FIT_ENABLED=false`, `MIN_SCORE_APPLY=1` – wenn aktiv, setzt fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
+- `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionale Hard-Allow-Liste; Titel/Ort/Raw-Title muessen einen dieser Werte enthalten (ASCII empfohlen)
+- `AUTO_FIT_ENABLED=true`, `MIN_SCORE_APPLY=0.6` - fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
 
 ## Final Acceptance (Checkliste)
 - `python tasks.py env-check` ok (SMTP/Profil gesetzt).
 - `python tasks.py verify` ok (Config, compileall, Templates, Dirs vorhanden).
 - `python tasks.py mail-list` schickt nur neue Jobs (Delta), Titel/Firma/Ort korrekt geparst, lokal gefiltert.
-- `python tasks.py prepare-applications` erzeugt DOCX in `out/`, Tracker ergänzt, optional Kopie via `--mirror-sent`/`archive-sent`.
-- Scheduler aktiv (täglich) mit Log; keine Duplikat-Mails über mehrere Tage.
+- `python tasks.py prepare-applications` erzeugt DOCX in `out/`, Tracker ergaenzt, optional Kopie via `--mirror-sent`/`archive-sent`.
+- Scheduler aktiv (taeglich) mit Log; keine Duplikat-Mails ueber mehrere Tage.
