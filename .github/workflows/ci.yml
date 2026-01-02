@@ -28,6 +28,10 @@ jobs:
           flake8 . --max-line-length 200 || echo "Lint warnings (non-blocking)"
           set -e
 
+      - name: Env write guard
+        run: |
+          python tools/check_env_writes.py
+
       - name: Compile (syntax check)
         run: |
           python -m compileall .

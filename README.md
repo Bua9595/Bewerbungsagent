@@ -17,7 +17,7 @@ Automatisiert Jobs sammeln -> filtern -> mailen -> Anschreiben erstellen -> Trac
 python -m venv .venv
 .\\.venv\\Scripts\\activate
 pip install -r requirements.txt
-copy .env.example .env   # .env befüllen
+if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wenn sie fehlt
 ```
 
 ### .env ausfüllen (Minimal)

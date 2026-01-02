@@ -1,7 +1,18 @@
-import os
 import sys
 import importlib.util
 from pathlib import Path
+from dotenv import load_dotenv, dotenv_values
+
+ENV_PATH = Path(".env")
+REQUIRED_ENV_KEYS = [
+    "SENDER_EMAIL",
+    "SENDER_PASSWORD",
+    "SMTP_SERVER",
+    "SMTP_PORT",
+    "RECIPIENT_EMAILS",
+    "SEARCH_LOCATIONS",
+    "LOCATION_RADIUS_KM",
+]
 
 def check_python_version():
     print(f"Python version: {sys.version}")
@@ -27,33 +38,19 @@ def check_imports():
     return True
 
 def check_env_file():
-    if not os.path.exists(".env"):
+    if not ENV_PATH.exists():
         print("MISSING: .env file")
         return False
-    
-    # Load .env manually to check keys
-    env_vars = {}
-    with open(".env", "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if "=" in line:
-                key, val = line.split("=", 1)
-                env_vars[key.strip()] = val.strip()
-    
-    required_keys = [
-        "SENDER_EMAIL", "SENDER_PASSWORD", "SMTP_SERVER", "SMTP_PORT",
-        "RECIPIENT_EMAILS", "GROQ_API_KEY", "SEARCH_LOCATIONS",
-        "SEARCH_KEYWORDS", "LOCATION_RADIUS_KM"
-    ]
-    
-    missing_keys = [k for k in required_keys if k not in env_vars]
+
+    load_dotenv(ENV_PATH)
+    env_vars = dotenv_values(ENV_PATH)
+
+    missing_keys = [k for k in REQUIRED_ENV_KEYS if not env_vars.get(k)]
     if missing_keys:
-        print(f"MISSING ENV VARS: {', '.join(missing_keys)}")
+        print(f"MISSING ENV VARS ({len(missing_keys)}): {', '.join(missing_keys)}")
         return False
-    
-    print(".env file present and contains basic keys.")
+
+    print(".env file present and contains required keys.")
     return True
 
 def main():

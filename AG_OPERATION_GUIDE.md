@@ -16,7 +16,7 @@ Dieser Leitfaden richtet sich an nachgelagerte Agents oder Cron-Jobs, die den `B
     - Windows: `.\.venv\Scripts\activate`
     - Linux: `source .venv/bin/activate`
 4.  Installieren: `pip install -r requirements.txt`
-5.  Konfiguration: `.env` aus `.env.example` kopieren und anpassen.
+5.  Konfiguration: Nur wenn `.env` noch fehlt -> `.env.example` nach `.env` kopieren und anpassen.
 
 ## 2. Konfiguration (.env)
 
