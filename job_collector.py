@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import List, Tuple
@@ -38,6 +39,8 @@ class Job:
     match: str = "unknown"  # exact | good | weak | unknown
     date: str = ""
     fit: str = ""
+    application_email: str = ""
+    contact_name: str = ""
 
 
 def _mk_driver(headless: bool = True) -> webdriver.Chrome:
@@ -297,6 +300,18 @@ DETAILS_BLOCKLIST_MAX_JOBS = int(
 DETAILS_BLOCKLIST_TIMEOUT = float(
     os.getenv("DETAILS_BLOCKLIST_TIMEOUT", "12") or 12
 )
+DETAILS_CONTACT_SCAN = str(
+    os.getenv("DETAILS_CONTACT_SCAN", "false")
+).lower() in TRUTHY
+DETAILS_CONTACT_MAX_BYTES = int(
+    os.getenv("DETAILS_CONTACT_MAX_BYTES", "200000") or 200000
+)
+DETAILS_CONTACT_MAX_JOBS = int(
+    os.getenv("DETAILS_CONTACT_MAX_JOBS", "40") or 40
+)
+DETAILS_CONTACT_TIMEOUT = float(
+    os.getenv("DETAILS_CONTACT_TIMEOUT", "12") or 12
+)
 ALLOW_REMOTE = str(os.getenv("ALLOW_REMOTE", "true")).lower() in TRUTHY
 REMOTE_KEYWORDS = [
     x.strip().lower()
@@ -314,6 +329,7 @@ TRANSIT_DATE = os.getenv("TRANSIT_DATE", "").strip()
 TRANSIT_TIMEOUT = float(os.getenv("TRANSIT_TIMEOUT", "12") or 12)
 
 DETAILS_BLOCKLIST_CACHE: dict[str, bool] = {}
+DETAILS_CONTACT_CACHE: dict[str, tuple[str, str]] = {}
 TRANSIT_CACHE: dict[tuple[str, str, str, str], int | None] = {}
 COMPANY_CAREERS_ENABLED = str(
     os.getenv("COMPANY_CAREERS_ENABLED", "false")
@@ -533,6 +549,144 @@ def _get_transit_minutes(
 
 _SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)[^>]*>.*?</\1>")
 _TAG_RE = re.compile(r"(?is)<[^>]+>")
+_EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
+_EMAIL_HINTS = ("bewerbung", "recruit", "hr", "jobs", "career")
+_EMAIL_DOMAIN_BLOCKLIST = {"jobs.ch", "jobup.ch", "indeed.com"}
+_CONTACT_LABEL_RE = re.compile(
+    r"(ansprech(?:partner|person)(?:/in)?|kontakt(?:person)?|contact|bewerbung|recruiter)",
+    re.IGNORECASE,
+)
+
+
+def _extract_emails_from_html(html: str) -> List[str]:
+    if not html:
+        return []
+    candidates: List[str] = []
+    for href, _text in _extract_links(html):
+        if not href:
+            continue
+        href_l = href.strip().lower()
+        if not href_l.startswith("mailto:"):
+            continue
+        addr = href.split(":", 1)[1].split("?", 1)[0].strip()
+        addr = addr.strip(" \t\r\n,.;:")
+        if addr:
+            candidates.append(addr)
+
+    for email in _EMAIL_RE.findall(html):
+        if email:
+            candidates.append(email.strip(" \t\r\n,.;:"))
+
+    seen = set()
+    out: List[str] = []
+    for email in candidates:
+        email_l = email.lower()
+        if email_l in seen:
+            continue
+        seen.add(email_l)
+        domain = email_l.split("@")[-1].strip()
+        if domain in _EMAIL_DOMAIN_BLOCKLIST:
+            continue
+        out.append(email)
+    return out
+
+
+def _pick_email(candidates: List[str]) -> str:
+    if not candidates:
+        return ""
+    for hint in _EMAIL_HINTS:
+        for email in candidates:
+            if hint in email.lower():
+                return email
+    return candidates[0]
+
+
+def _html_to_lines(html: str) -> List[str]:
+    if not html:
+        return []
+    text = re.sub(r"(?i)<br\s*/?>", "\n", html)
+    text = re.sub(r"(?i)</(p|div|li|tr|section|article)>", "\n", text)
+    text = _SCRIPT_STYLE_RE.sub(" ", text)
+    text = _TAG_RE.sub(" ", text)
+    text = unescape(text)
+    lines: List[str] = []
+    for line in text.splitlines():
+        clean = re.sub(r"\s+", " ", line).strip()
+        if clean:
+            lines.append(clean)
+    return lines
+
+
+def _looks_like_name(text: str) -> bool:
+    if not text or "@" in text:
+        return False
+    if len(text) > 80:
+        return False
+    if re.search(r"\b(http|www\.)", text, re.I):
+        return False
+    tokens = re.findall(r"[A-Za-z][A-Za-z\.'-]*", text)
+    return 1 < len(tokens) <= 4
+
+
+def _clean_contact_line(line: str) -> str:
+    candidate = line.strip()
+    if ":" in candidate:
+        head, tail = candidate.split(":", 1)
+        if _CONTACT_LABEL_RE.search(head):
+            candidate = tail.strip()
+    candidate = re.sub(
+        r"(?i)\b(e-mail|email|telefon|phone|tel)\b.*",
+        "",
+        candidate,
+    ).strip()
+    return candidate
+
+
+def _extract_contact_name(lines: List[str]) -> str:
+    for idx, line in enumerate(lines):
+        if not _CONTACT_LABEL_RE.search(line):
+            continue
+        candidate = _clean_contact_line(line)
+        if _looks_like_name(candidate):
+            return candidate
+        for offset in (1, 2):
+            if idx + offset >= len(lines):
+                continue
+            candidate = _clean_contact_line(lines[idx + offset])
+            if _looks_like_name(candidate):
+                return candidate
+    return ""
+
+
+def _detail_page_contact(url: str) -> Tuple[str, str]:
+    if not url:
+        return "", ""
+    if url in DETAILS_CONTACT_CACHE:
+        return DETAILS_CONTACT_CACHE[url]
+    try:
+        resp = requests.get(
+            url,
+            headers={"User-Agent": "Bewerbungsagent/1.0 (+contact-scan)"},
+            timeout=DETAILS_CONTACT_TIMEOUT,
+        )
+        resp.raise_for_status()
+        text = resp.text or ""
+        if DETAILS_CONTACT_MAX_BYTES and len(text) > DETAILS_CONTACT_MAX_BYTES:
+            text = text[:DETAILS_CONTACT_MAX_BYTES]
+    except Exception as e:
+        job_logger.warning(f"Contact-Scan Fehler ({url}): {e}")
+        DETAILS_CONTACT_CACHE[url] = ("", "")
+        return "", ""
+
+    emails = _extract_emails_from_html(text)
+    email = _pick_email(emails)
+    name = _extract_contact_name(_html_to_lines(text))
+    DETAILS_CONTACT_CACHE[url] = (email, name)
+    return email, name
+
+
+def extract_application_contact(url: str) -> Tuple[str, str]:
+    return _detail_page_contact(url)
 
 
 def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
@@ -630,6 +784,8 @@ def export_json(rows: List[Job], path: str | None = None) -> None:
                 "score": j.score,
                 "date": j.date,
                 "fit": getattr(j, "fit", ""),
+                "application_email": getattr(j, "application_email", ""),
+                "contact_name": getattr(j, "contact_name", ""),
             }
         )
     out_path.write_text(json.dumps(serializable, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -807,6 +963,7 @@ def collect_jobs(
     unique: List[Job] = []
     search_locs = locations
     detail_scans = 0
+    contact_scans = 0
     transit_enabled = (
         TRANSIT_ENABLED and bool(TRANSIT_ORIGIN) and TRANSIT_MAX_MINUTES > 0
     )
@@ -875,6 +1032,19 @@ def collect_jobs(
             if _detail_page_has_blocked_terms(j.link, BLOCKLIST_TERMS):
                 continue
         seen.add(key)
+
+        if (
+            DETAILS_CONTACT_SCAN
+            and j.link
+            and contact_scans < DETAILS_CONTACT_MAX_JOBS
+        ):
+            if j.link not in DETAILS_CONTACT_CACHE:
+                contact_scans += 1
+            email, name = extract_application_contact(j.link)
+            if email:
+                j.application_email = email
+            if name:
+                j.contact_name = name
 
         j.score += _location_boost(j.location, search_locs)
         if ALLOWED_LOCATIONS and allowed_match:
