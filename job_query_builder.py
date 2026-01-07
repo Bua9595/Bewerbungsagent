@@ -6,7 +6,7 @@ def build_search_urls(config):
 
     Returns a dict: {description: url}
     """
-    locations = getattr(config, 'SEARCH_LOCATIONS', ["Zürich"]) or ["Zürich"]
+    locations = getattr(config, 'SEARCH_LOCATIONS', ["Zuerich"]) or ["Zuerich"]
     radius = getattr(config, 'LOCATION_RADIUS_KM', 25)
     base_keywords = getattr(config, 'SEARCH_KEYWORDS', ["IT Support"]) or ["IT Support"]
     variants = (getattr(config, 'TITLE_VARIANTS_DE', []) + getattr(config, 'TITLE_VARIANTS_EN', []))

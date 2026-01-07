@@ -678,7 +678,6 @@ def cmd_prepare_applications(args):
                 "mein Verständnis für logistische Prozesse kann ich gewinnbringend einbringen."
             ),
         }
-
         # Support für alte Tokens mit EINZELNEN Klammern
         legacy_mapping = {
             "{TODAY_DATE}": today,

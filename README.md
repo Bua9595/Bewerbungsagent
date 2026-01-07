@@ -37,14 +37,16 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `python tasks.py email-test` – SMTP-Test
 
 ## Verhalten / Filter
-- Standard-Orte: Buelach/Kloten/Zuerich (ASCII; per .env setzbar). Harte Ortsfilter: Titel/Location/Raw-Title muss einen Ort enthalten, sonst Drop.
+- Standard-Orte: Buelach/Kloten/Zuerich (ASCII; per .env setzbar). Ortsfilter ist hart; mit `STRICT_LOCATION_FILTER=false` wird soft gefiltert.
 - Score/Match: Keywords/Negativliste steuern Scoring; `MIN_SCORE_MAIL` (Default 2) filtert fuer Mail.
+- Sprache: Begriffe aus `LANGUAGE_BLOCKLIST` in Titel/Raw-Title/Ort filtern Jobs heraus.
+- Anforderungen: `REQUIREMENTS_BLOCKLIST` filtert z.B. Führerschein-Pflicht.
 - Mail-Body: parst jobs.ch/jobup-Multiline-Titel (Arbeitsort/Firma), zeigt Quelle/Match/Score; Soft-Cap `EMAIL_MAX_JOBS` (Default 200).
 - Delta-Mailing: Mail verschickt nur neue Jobs (persistiert in `generated/seen_jobs.json`).
 
 ### Auto-Fit & Filter
 - `AUTO_FIT_ENABLED=true`, `MIN_SCORE_APPLY=0.6` -> fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
-- `ALLOWED_LOCATIONS` filtert strikt nach normalisiertem Ort (kommagetrennt, z.B. `Buelach,Zuerich,Kloten,Winterthur,Baden,Zug`).
+- `ALLOWED_LOCATIONS` wirkt als Hard-Allow bei `STRICT_LOCATION_FILTER=true`, sonst nur als Soft-Boost (kommagetrennt, z.B. `Buelach,Zuerich,Kloten,Winterthur,Baden,Zug`).
 - Typische Entry Points:
   - Suche + Mail: `python tasks.py mail-list`
   - Manuelle Liste: `python tasks.py list`
@@ -81,8 +83,15 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `BLACKLIST_KEYWORDS=junior` - Titel-Keywords zum Ausschluss
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` - Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
-- `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionale Hard-Allow-Liste; Titel/Ort/Raw-Title muessen einen dieser Werte enthalten (ASCII empfohlen)
+- `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow
 - `AUTO_FIT_ENABLED=true`, `MIN_SCORE_APPLY=0.6` - fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
+- `STRICT_LOCATION_FILTER=true`, `ALLOWED_LOCATION_BOOST=2` - harter Ortsfilter (mit Soft-Boost)
+- `LANGUAGE_BLOCKLIST=franzosisch,francais,french,...` - filtert Jobs mit Sprach-Anforderungen
+- `REQUIREMENTS_BLOCKLIST=fuehrerschein,kat b,...` - filtert Führerschein/Auto-Pflicht
+- ÖV-Zeitfilter: `TRANSIT_ENABLED`, `TRANSIT_ORIGIN`, `TRANSIT_MAX_MINUTES`, `TRANSIT_TIME`, `TRANSIT_DATE`
+- Optional: `DETAILS_BLOCKLIST_SCAN=true` scannt Stellen-Details nach blockierten Begriffen
+- Optional: `EXPAND_QUERY_VARIANTS`, `QUERY_VARIANTS_LIMIT`, `MAX_QUERY_TERMS`, `EXTRA_QUERY_TERMS` für breitere Suche
+- Company-Career-Scan (optional): `COMPANY_CAREERS_ENABLED`, `COMPANY_CAREER_URLS`, `COMPANY_CAREER_NAMES`, `CAREER_LINK_KEYWORDS`, `CAREER_MAX_LINKS`, `CAREER_MIN_SCORE`
 
 ## Final Acceptance (Checkliste)
 - `python tasks.py env-check` ok (SMTP/Profil gesetzt).
