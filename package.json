@@ -1,0 +1,15 @@
+{
+  "name": "bewerbungsagent",
+  "version": "1.0.0",
+  "description": "Automatisiert Jobs sammeln -> filtern -> mailen -> Anschreiben erstellen -> Tracking pflegen. Alle Geheimnisse bleiben in `.env` (nicht im Repo).",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
