@@ -1,7 +1,7 @@
-﻿"""Direkt-Job-Finder: Ã–ffnet relevante Jobportale, pflegt Vorlagen und Tracking.
+﻿"""Direkt-Job-Finder: Öffnet relevante Jobportale, pflegt Vorlagen und Tracking.
 
 Fokus: IT-Support/Workplace/Onsite/Rollout + passende Lager/Logistikrollen
-im Raum Bülach/Kloten/Zürich (ÖV â‰¤ 60 Min.). UTF-8 bereinigt.
+im Raum Bülach/Kloten/Zürich (ÖV ≤ 60 Min.). UTF-8 bereinigt.
 """
 
 import webbrowser
@@ -20,7 +20,7 @@ class DirectJobFinder:
         # Dynamisch generierte Portal-Suchlinks aus Konfiguration
         self.direct_job_urls = build_search_urls(config)
 
-        # Profil fÃ¼r personalisierte Anschreiben
+        # Profil für personalisierte Anschreiben
         self.profile = {
             "name": getattr(config, "PROFILE_NAME", "") or os.getenv("PROFILE_NAME", ""),
             "email": getattr(config, "PROFILE_EMAIL", "") or os.getenv("PROFILE_EMAIL", ""),
@@ -51,17 +51,17 @@ ANSCHREIBEN: IT SUPPORT / SERVICE DESK / WORKPLACE
 ============================================================
 Sehr geehrte Damen und Herren,
 
-mit groÃŸer Motivation bewerbe ich mich als ICT Supporter (1st/2nd Level). Nach meiner Ausbildung zum Technischen Assistenten fÃ¼r Informatik bringe ich praxisnahe Kenntnisse in Windows 10/11, Microsoft 365, Active Directory sowie Ticketing-Systemen mit. Aus meiner mehrjÃ¤hrigen Erfahrung in der Logistik mit SAP kenne ich den Wert stabiler IT-Prozesse im operativen Alltag.
+mit großer Motivation bewerbe ich mich als ICT Supporter (1st/2nd Level). Nach meiner Ausbildung zum Technischen Assistenten für Informatik bringe ich praxisnahe Kenntnisse in Windows 10/11, Microsoft 365, Active Directory sowie Ticketing-Systemen mit. Aus meiner mehrjährigen Erfahrung in der Logistik mit SAP kenne ich den Wert stabiler IT-Prozesse im operativen Alltag.
 
-StÃ¤rken:
-â€¢ ZuverlÃ¤ssiger 1st-Level-Support, hÃ¶flich und lÃ¶sungsorientiert
-â€¢ Benutzer- und GerÃ¤teverwaltung (AD/M365), Hardware-/Software-Rollouts
-â€¢ Basis Netzwerk (TCP/IP, VLAN) und Remote-Support
-â€¢ Strukturierte Dokumentation und Teamarbeit
+Stärken:
+• Zuverlässiger 1st-Level-Support, höflich und lösungsorientiert
+• Benutzer- und Geräteverwaltung (AD/M365), Hardware-/Software-Rollouts
+• Basis Netzwerk (TCP/IP, VLAN) und Remote-Support
+• Strukturierte Dokumentation und Teamarbeit
 
-Gern unterstÃ¼tze ich Ihr Team vor Ort im Raum Bülach/Zürich. Beginn: ab sofort.
+Gern unterstütze ich Ihr Team vor Ort im Raum Bülach/Zürich. Beginn: ab sofort.
 
-Mit freundlichen GrÃ¼ÃŸen
+Mit freundlichen Grüßen
 {name}
 
 ============================================================
@@ -69,9 +69,9 @@ ANSCHREIBEN: ONSITE / FIELD SERVICE / ROLLOUT
 ============================================================
 Sehr geehrte Damen und Herren,
 
-ich bewerbe mich fÃ¼r eine Position im Onsite-/Field-Service. Ich arbeite sorgfÃ¤ltig, kundenorientiert und zuverlÃ¤ssig, auch im Schichtbetrieb. Aufgaben wie GerÃ¤tevorbereitung/Imaging, Arbeitsplatzaufbau, Peripherie, Migrationen und Vor-Ort-Support setze ich strukturiert um. Ã–ffentliche Verkehrsmittel nutze ich flexibel im Raum Bülach/Zürich (Fahrzeit < 60 Min.).
+ich bewerbe mich für eine Position im Onsite-/Field-Service. Ich arbeite sorgfältig, kundenorientiert und zuverlässig, auch im Schichtbetrieb. Aufgaben wie Gerätevorbereitung/Imaging, Arbeitsplatzaufbau, Peripherie, Migrationen und Vor-Ort-Support setze ich strukturiert um. Öffentliche Verkehrsmittel nutze ich flexibel im Raum Bülach/Zürich (Fahrzeit < 60 Min.).
 
-Mit freundlichen GrÃ¼ÃŸen
+Mit freundlichen Grüßen
 {name}
 
 ============================================================
@@ -79,9 +79,9 @@ ANSCHREIBEN: JUNIOR SYSTEMADMINISTRATOR / IT OPERATOR
 ============================================================
 Sehr geehrte Damen und Herren,
 
-als technisch versierter Berufseinsteiger mit hands-on Erfahrung in AD/M365, Grundkenntnissen in Skripting (Python) und soliden Netzwerk-Basics unterstÃ¼tze ich gerne Ihr Team im Betrieb. Durch meine Logistikerfahrung mit SAP handle ich zuverlÃ¤ssig und prozesssicher â€“ auch unter Zeitdruck.
+als technisch versierter Berufseinsteiger mit hands-on Erfahrung in AD/M365, Grundkenntnissen in Skripting (Python) und soliden Netzwerk-Basics unterstütze ich gerne Ihr Team im Betrieb. Durch meine Logistikerfahrung mit SAP handle ich zuverlässig und prozesssicher – auch unter Zeitdruck.
 
-Mit freundlichen GrÃ¼ÃŸen
+Mit freundlichen Grüßen
 {name}
 
 ============================================================
@@ -89,9 +89,9 @@ ANSCHREIBEN: SAP-/LOGISTIK-IT-SUPPORT
 ============================================================
 Sehr geehrte Damen und Herren,
 
-aufgrund meiner Ausbildung in der Informatik und meiner mehrjÃ¤hrigen TÃ¤tigkeit in der Logistik (Wareneingang/-ausgang, Kommissionierung, SAP-Buchungen) kann ich sowohl technische Anliegen als auch Prozessfragen kompetent bearbeiten. Ich verbinde IT-Support mit VerstÃ¤ndnis fÃ¼r LagerablÃ¤ufe und sorge fÃ¼r reibungslose IT-gestÃ¼tzte Prozesse.
+aufgrund meiner Ausbildung in der Informatik und meiner mehrjährigen Tätigkeit in der Logistik (Wareneingang/-ausgang, Kommissionierung, SAP-Buchungen) kann ich sowohl technische Anliegen als auch Prozessfragen kompetent bearbeiten. Ich verbinde IT-Support mit Verständnis für Lagerabläufe und sorge für reibungslose IT-gestützte Prozesse.
 
-Mit freundlichen GrÃ¼ÃŸen
+Mit freundlichen Grüßen
 {name}
 
 ============================================================
@@ -99,13 +99,13 @@ ANSCHREIBEN: LAGER / LOGISTIK (Fachkraft Lagerlogistik)
 ============================================================
 Sehr geehrte Damen und Herren,
 
-ich bewerbe mich als Fachkraft fÃ¼r Lagerlogistik. Ich bringe Erfahrung in Wareneingang/-ausgang, Kommissionierung, Milkrun, Gefahrgut, Inventur und SAP-Buchungen mit. Ich arbeite prÃ¤zise, zuverlÃ¤ssig und teamorientiert â€“ Schichtarbeit ist in Ordnung. Einsatzort bevorzugt Bülach/Zürich, Anfahrt mit ÖV.
+ich bewerbe mich als Fachkraft für Lagerlogistik. Ich bringe Erfahrung in Wareneingang/-ausgang, Kommissionierung, Milkrun, Gefahrgut, Inventur und SAP-Buchungen mit. Ich arbeite präzise, zuverlässig und teamorientiert – Schichtarbeit ist in Ordnung. Einsatzort bevorzugt Bülach/Zürich, Anfahrt mit ÖV.
 
-Mit freundlichen GrÃ¼ÃŸen
+Mit freundlichen Grüßen
 {name}
 """.strip() + "\n"
 
-        # Entferne harte NamenseintrÃ¤ge zugunsten des Profils
+        # Entferne harte Namenseinträge zugunsten des Profils
 
         with open(config.TEMPLATES_FILE, "w", encoding="utf-8") as f:
             f.write(templates)
@@ -122,10 +122,10 @@ Mit freundlichen GrÃ¼ÃŸen
             f.write(example + "\n")
         print("Tracking-Sheet erstellt: bewerbungen_tracking.csv")
 
-    # ------------------ Suche/LÃ¤ufe ------------------
+    # ------------------ Suche/Läufe ------------------
     def open_job_portals_automatically(self):
-        """Ã–ffnet relevante Job-Portale in neuen Browser-Tabs."""
-        print("Ã–ffne Job-Portale im Standardbrowserâ€¦")
+        """Öffnet relevante Job-Portale in neuen Browser-Tabs."""
+        print("Öffne Job-Portale im Standardbrowser…")
         for desc, url in self.direct_job_urls.items():
             try:
                 webbrowser.open_new_tab(url)
@@ -138,18 +138,18 @@ Mit freundlichen GrÃ¼ÃŸen
         print(f"Automatische Job-Suche gestartet: {datetime.now()}")
         logging.info(f"Automatische Job-Suche gestartet: {datetime.now()}")
 
-        # Dateien prÃ¼fen/erstellen
+        # Dateien prüfen/erstellen
         if not os.path.exists(config.TEMPLATES_FILE):
-            print("Erstelle Bewerbungsvorlagenâ€¦")
+            print("Erstelle Bewerbungsvorlagen…")
             self.save_application_templates()
         if not os.path.exists(config.TRACKING_FILE):
-            print("Erstelle Tracking-Sheetâ€¦")
+            print("Erstelle Tracking-Sheet…")
             self.create_job_tracking_sheet()
 
         # Links dynamisch aus Config neu aufbauen
         self.direct_job_urls = build_search_urls(config)
 
-        # Ãœberblick
+        # Überblick
         print("\nZIEL-ROLLEN (IT + Logistik):")
         print("- IT Support (1st/2nd Level), Service Desk/Workplace")
         print("- Onsite/Field Service, Rollout/Migrationen")
@@ -165,21 +165,21 @@ Mit freundlichen GrÃ¼ÃŸen
         logging.info(f"Automatische Job-Suche abgeschlossen: {datetime.now()}")
 
     def schedule_job_search(self):
-        """Plant die automatische Job-Suche tÃ¤glich zur Config-Zeit."""
+        """Plant die automatische Job-Suche täglich zur Config-Zeit."""
         schedule.every().day.at(getattr(config, "DAILY_SEARCH_TIME", "09:00")).do(self.run_automated_job_hunt)
         print("Job-Suche geplant!")
         logging.info("Job-Suche geplant")
 
     def run_complete_job_hunt(self):
-        """Aktualisiert Dateien, zeigt Links und Ã¶ffnet optional Portale."""
+        """Aktualisiert Dateien, zeigt Links und öffnet optional Portale."""
         print("AKTUALISIERE JOB-SUCHE!")
         print("=" * 60)
 
         if not os.path.exists(config.TEMPLATES_FILE):
-            print("Erstelle Bewerbungsvorlagenâ€¦")
+            print("Erstelle Bewerbungsvorlagen…")
             self.save_application_templates()
         if not os.path.exists(config.TRACKING_FILE):
-            print("Erstelle Tracking-Sheetâ€¦")
+            print("Erstelle Tracking-Sheet…")
             self.create_job_tracking_sheet()
 
         # Links aktualisieren
@@ -195,7 +195,7 @@ Mit freundlichen GrÃ¼ÃŸen
         choice = os.getenv("AUTO_OPEN_PORTALS")
         if choice is None:
             try:
-                choice = input("Job-Portale jetzt im Browser Ã¶ffnen? (j/n): ")
+                choice = input("Job-Portale jetzt im Browser öffnen? (j/n): ")
             except EOFError:
                 choice = 'n'
 
@@ -207,7 +207,7 @@ Mit freundlichen GrÃ¼ÃŸen
                 print(f"{desc}: {url}")
 
         print("\nOPTIMIERTE PARAMETER:")
-        print("- Region: Bülach/Kloten/Zürich, Radius â‰¤ 25 km")
+        print("- Region: Bülach/Kloten/Zürich, Radius ≤ 25 km")
         print("- Filter: ohne Senior/Lead/Bachelor/Master")
         print("- Sprachen: Deutsch (sehr gut), Englisch (B2)")
 

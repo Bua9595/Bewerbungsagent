@@ -666,7 +666,7 @@ def cmd_prepare_applications(args):
 
         doc = Document(str(template_path))
 
-        # Mapping für neue Tokens
+        # Mapping für neue Tokens plus bisherige Platzhalter
         mapping = {
             "{{TODAY_DATE}}": today,
             "{{JOB_TITLE}}": job_title,
@@ -677,6 +677,10 @@ def cmd_prepare_applications(args):
                 "Besonders meine Erfahrung im 1st/2nd Level Support und "
                 "mein Verständnis für logistische Prozesse kann ich gewinnbringend einbringen."
             ),
+            "<Ort>": location or "Bülach",
+            "<Datum>": today,
+            "<JOBTITEL>": job_title,
+            "<FIRMA>": company,
         }
         # Support für alte Tokens mit EINZELNEN Klammern
         legacy_mapping = {
