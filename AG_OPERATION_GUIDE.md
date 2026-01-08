@@ -43,6 +43,7 @@ python tasks.py mail-list
 ```
 *Hinweis: `mail-list` synchronisiert automatisch Markierungen aus `generated/job_tracker.xlsx`.*
 *CSV wird weiterhin unterstuetzt via `JOB_TRACKER_FILE=generated/job_tracker.csv`.*
+*Run-Lock: `RUN_LOCK_FILE` + `RUN_LOCK_TTL_MIN` verhindern parallele Laeufe.*
 *Empfehlung: Täglich morgens (z.B. 09:00).*
 
 ### Interaktive Tracker-UI (optional)
@@ -51,6 +52,7 @@ Lokale Klick-UI fuer erledigt/ignored:
 python tasks.py tracker-ui
 ```
 *URL: http://127.0.0.1:8765*
+*Erledigt/closed Anzeige standardmaessig fuer die letzten `TRACKER_UI_DAYS` Tage.*
 
 ### Bewerbungen vorbereiten (Batch)
 Erstellt DOCX-Anschreiben für alle "passenden" Jobs (Status "OK" oder manuell geprüft).

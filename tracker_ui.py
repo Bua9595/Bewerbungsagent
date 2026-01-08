@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import os
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
@@ -219,6 +220,10 @@ HTML_PAGE = """<!doctype html>
         <input type="checkbox" id="showDone">
         Show done
       </label>
+      <label class="toggle">
+        <input type="checkbox" id="showClosed">
+        Show closed
+      </label>
       <input type="text" id="search" placeholder="Suche nach Titel, Firma, Ort">
       <span class="muted" id="lastUpdated"></span>
     </div>
@@ -243,7 +248,7 @@ HTML_PAGE = """<!doctype html>
     </div>
   </div>
   <script>
-    const state = { includeDone: false, query: "" };
+    const state = { includeDone: false, includeClosed: false, query: "" };
     let lastPayload = null;
 
     const rowsEl = document.getElementById("rows");
@@ -264,6 +269,8 @@ HTML_PAGE = """<!doctype html>
         label = "applied";
       } else if (status === "ignored") {
         span.classList.add("bad");
+      } else if (status === "closed") {
+        span.classList.add("warn");
       }
       span.textContent = label;
       return span;
@@ -309,8 +316,11 @@ HTML_PAGE = """<!doctype html>
     }
 
     async function loadJobs() {
-      const qs = state.includeDone ? "?include_done=1" : "";
-      lastPayload = await api("/api/jobs" + qs);
+      const qs = new URLSearchParams();
+      if (state.includeDone) qs.set("include_done", "1");
+      if (state.includeClosed) qs.set("include_closed", "1");
+      const query = qs.toString();
+      lastPayload = await api("/api/jobs" + (query ? "?" + query : ""));
       render(lastPayload);
     }
 
@@ -410,6 +420,10 @@ HTML_PAGE = """<!doctype html>
       state.includeDone = ev.target.checked;
       loadJobs();
     });
+    document.getElementById("showClosed").addEventListener("change", (ev) => {
+      state.includeClosed = ev.target.checked;
+      loadJobs();
+    });
     document.getElementById("search").addEventListener("input", (ev) => {
       state.query = ev.target.value.trim().toLowerCase();
       if (lastPayload) {
@@ -428,7 +442,10 @@ def _status_for_open(record: Dict[str, Any]) -> str:
     return STATUS_NOTIFIED if record.get("last_sent_at") else STATUS_NEW
 
 
-def _collect_jobs(include_done: bool) -> Dict[str, Any]:
+UI_HISTORY_DAYS = int(os.getenv("TRACKER_UI_DAYS", "60") or 60)
+
+
+def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
     state = load_state()
     items: List[Dict[str, Any]] = []
     counts = {
@@ -438,20 +455,31 @@ def _collect_jobs(include_done: bool) -> Dict[str, Any]:
         "closed": 0,
         "total": len(state),
     }
+    now = datetime.now(timezone.utc)
+    cutoff = None
+    if UI_HISTORY_DAYS > 0:
+        cutoff = now - timedelta(days=UI_HISTORY_DAYS)
+
     for uid, record in state.items():
         status = record.get("status") or STATUS_NEW
+        last_seen = parse_ts(record.get("last_seen_at"))
+        recent = True
+        if cutoff and last_seen:
+            recent = last_seen >= cutoff
         if status == STATUS_CLOSED:
             counts["closed"] += 1
-            continue
+            if not include_closed or not recent:
+                continue
         if status == STATUS_APPLIED:
             counts["applied"] += 1
+            if not include_done or not recent:
+                continue
         elif status == STATUS_IGNORED:
             counts["ignored"] += 1
+            if not include_done or not recent:
+                continue
         else:
             counts["open"] += 1
-
-        if not include_done and status not in (STATUS_NEW, STATUS_NOTIFIED):
-            continue
 
         items.append(
             {
@@ -469,7 +497,8 @@ def _collect_jobs(include_done: bool) -> Dict[str, Any]:
         )
 
     items.sort(
-        key=lambda item: parse_ts(item.get("last_seen_at")) or datetime.min,
+        key=lambda item: parse_ts(item.get("last_seen_at"))
+        or datetime.min.replace(tzinfo=timezone.utc),
         reverse=True,
     )
     return {
@@ -504,7 +533,11 @@ class TrackerHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/jobs":
             params = parse_qs(parsed.query)
             include_done = params.get("include_done", ["0"])[0] == "1"
-            payload = _collect_jobs(include_done=include_done)
+            include_closed = params.get("include_closed", ["0"])[0] == "1"
+            payload = _collect_jobs(
+                include_done=include_done,
+                include_closed=include_closed,
+            )
             self._send_json(payload)
             return
         self.send_error(404)
@@ -569,4 +602,3 @@ def run_tracker_ui(host: str = "127.0.0.1", port: int = 8765, open_browser: bool
         except Exception:
             pass
     server.serve_forever()
-

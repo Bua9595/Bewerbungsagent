@@ -51,6 +51,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
   - CSV wird weiterhin unterstuetzt (setze `JOB_TRACKER_FILE=generated/job_tracker.csv`).
   - `mail-list` liest den Tracker automatisch ein; alternativ `python tasks.py tracker-sync`.
   - Klickbar im Browser via `python tasks.py tracker-ui` (setzt Status in `job_state.json`).
+  - Tracker-UI zeigt erledigt/closed standardmaessig nur aus den letzten `TRACKER_UI_DAYS` Tagen.
   - Job-UID wird in der Mail angezeigt (fuer mark-applied/mark-ignored).
   - Erinnerungen fuer offene Jobs nach `REMINDER_DAYS` (oder taeglich via `REMINDER_DAILY=true`).
   - Jobs werden als closed markiert, wenn sie `CLOSE_MISSING_RUNS` Laeufe fehlen oder seit `CLOSE_NOT_SEEN_DAYS` Tagen nicht gesehen wurden.
@@ -105,6 +106,9 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `REMINDER_DAILY=false` - true = taegliche Erinnerungen
 - `CLOSE_MISSING_RUNS=3` - schliesst Jobs nach N fehlenden Laeufen
 - `CLOSE_NOT_SEEN_DAYS=7` - schliesst Jobs nach N Tagen ohne Treffer
+- `RUN_LOCK_FILE=generated/mail_list.lock` - Run-Lock Datei fuer Agenten/Scheduler
+- `RUN_LOCK_TTL_MIN=120` - stale Lock nach N Minuten
+- `TRACKER_UI_DAYS=60` - Tracker-UI zeigt erledigt/closed nur fuer N Tage
 - `STRICT_LOCATION_FILTER=true`, `ALLOWED_LOCATION_BOOST=2` - harter Ortsfilter (mit Soft-Boost)
 - `LANGUAGE_BLOCKLIST=franzosisch,francais,french,...` - filtert Jobs mit Sprach-Anforderungen
 - `REQUIREMENTS_BLOCKLIST=fuehrerschein,kat b,...` - filtert Führerschein/Auto-Pflicht

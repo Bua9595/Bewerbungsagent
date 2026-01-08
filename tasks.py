@@ -19,18 +19,91 @@ Beispiele:
 """
 
 import argparse
+import atexit
 import os
 import re
 import json
 import shutil
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
+
+
+def _get_run_lock_path() -> Path:
+    return Path(os.getenv("RUN_LOCK_FILE", "generated/mail_list.lock"))
+
+
+def _get_run_lock_ttl_min() -> int:
+    try:
+        return int(os.getenv("RUN_LOCK_TTL_MIN", "120") or 120)
+    except Exception:
+        return 120
+
+
+def _read_lock_payload(lock_path: Path) -> dict:
+    try:
+        return json.loads(lock_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _lock_is_stale(lock_path: Path, ttl_min: int) -> bool:
+    if ttl_min <= 0:
+        return True
+    payload = _read_lock_payload(lock_path)
+    started_raw = payload.get("started_at")
+    if not started_raw:
+        return True
+    try:
+        from job_state import parse_ts
+
+        started = parse_ts(started_raw)
+    except Exception:
+        started = None
+    if not started:
+        return True
+    return (datetime.now(timezone.utc) - started) > timedelta(minutes=ttl_min)
+
+
+def _release_run_lock(lock_path: Path) -> None:
+    try:
+        lock_path.unlink()
+    except FileNotFoundError:
+        return
+    except Exception:
+        return
+
+
+def _acquire_run_lock(lock_path: Path, ttl_min: int) -> bool:
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    if lock_path.exists():
+        if not _lock_is_stale(lock_path, ttl_min):
+            print(f"Run-Lock aktiv, Abbruch: {lock_path}")
+            return False
+        _release_run_lock(lock_path)
+    try:
+        from job_state import now_iso
+
+        payload = {
+            "pid": os.getpid(),
+            "started_at": now_iso(),
+            "ttl_min": ttl_min,
+        }
+        with lock_path.open("x", encoding="utf-8") as f:
+            json.dump(payload, f)
+    except FileExistsError:
+        print(f"Run-Lock aktiv, Abbruch: {lock_path}")
+        return False
+    except Exception as e:
+        print(f"Run-Lock konnte nicht erstellt werden: {e}")
+        return False
+    atexit.register(_release_run_lock, lock_path)
+    return True
 
 
 def cmd_env_check(_args=None):
@@ -144,6 +217,11 @@ def cmd_mail_list(args=None):
         from logger import job_logger
     except Exception as e:
         print(f"Mail-Liste Fehler: {e}")
+        return
+
+    lock_path = _get_run_lock_path()
+    lock_ttl_min = _get_run_lock_ttl_min()
+    if not _acquire_run_lock(lock_path, lock_ttl_min):
         return
 
     stamp = now_iso()
