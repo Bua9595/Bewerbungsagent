@@ -52,6 +52,10 @@ def _mk_driver(headless: bool = True) -> webdriver.Chrome:
     opts.add_argument("--window-size=1200,2000")
     opts.add_argument("--user-agent=Bewerbungsagent/1.0 (+job-collector)")
     opts.add_argument("--lang=de-CH,de;q=0.9")
+    opts.add_argument("--log-level=3")
+    opts.add_argument("--disable-logging")
+    opts.add_argument("--disable-features=WebGPU")
+    opts.add_experimental_option("excludeSwitches", ["enable-logging"])
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=opts)

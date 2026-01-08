@@ -29,7 +29,9 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 ## Nutzung (häufigste Commands)
 - `python tasks.py env-check` – zeigt SMTP/Empfänger/Profil
 - `python tasks.py verify` – Config/compileall/Verzeichnis-Check
-- `python tasks.py mail-list` – sammelt Jobs, filtert auf lokale Orte, mailt alle Treffer (Soft-Cap per `EMAIL_MAX_JOBS`)
+- `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`, mit `--dry-run` nur simulieren)
+- `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)
+- `python tasks.py mark-ignored <job_uid> [--url <link>]` - markiert Job als ignoriert (stoppt Erinnerungen)
 - `python tasks.py list` – sammelt und gibt Textliste + CSV aus
 - `python tasks.py prepare-applications [--force-all] [--mirror-sent] [--copy-sent-dir <pfad>]` – erzeugt Anschreiben aus `data/jobs.json` (fit=="OK") in `out/`, tracked in `bewerbungen_tracking.csv`; optional Kopie in `04_Versendete_Bewerbungen/<Firma>/`
 - `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` – manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
@@ -42,7 +44,11 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - Sprache: Begriffe aus `LANGUAGE_BLOCKLIST` in Titel/Raw-Title/Ort filtern Jobs heraus.
 - Anforderungen: `REQUIREMENTS_BLOCKLIST` filtert z.B. Führerschein-Pflicht.
 - Mail-Body: parst jobs.ch/jobup-Multiline-Titel (Arbeitsort/Firma), zeigt Quelle/Match/Score; Soft-Cap `EMAIL_MAX_JOBS` (Default 200).
-- Delta-Mailing: Mail verschickt nur neue Jobs (persistiert in `generated/seen_jobs.json`).
+- Lifecycle: Jobs werden in `generated/job_state.json` verwaltet (new/notified/applied/ignored/closed).
+  - Job-UID wird in der Mail angezeigt (fuer mark-applied/mark-ignored).
+  - Erinnerungen fuer offene Jobs nach `REMINDER_DAYS` (oder taeglich via `REMINDER_DAILY=true`).
+  - Jobs werden als closed markiert, wenn sie `CLOSE_MISSING_RUNS` Laeufe fehlen oder seit `CLOSE_NOT_SEEN_DAYS` Tagen nicht gesehen wurden.
+  - Migration: vorhandene `generated/seen_jobs.json` wird beim ersten Lauf in `job_state.json` uebernommen.
 
 ### Auto-Fit & Filter
 - `AUTO_FIT_ENABLED=true`, `MIN_SCORE_APPLY=0.6` -> fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
@@ -54,6 +60,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 
 ## Dateien/Ordner
 - `data/jobs.json` - letzter Job-Snapshot
+- `generated/job_state.json` - Lifecycle-Status je Job (single source of truth fuer Mailings)
 - `Anschreiben_Templates/` - Templates (`T1_ITSup.docx`, `T2_Systemtechnik.docx`, `T3_Logistik.docx`)
 - `out/` - generierte Anschreiben
 - `bewerbungen_tracking.csv` - Tracker (wird bei Bedarf angelegt/erweitert)
@@ -85,6 +92,10 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
 - `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow
 - `AUTO_FIT_ENABLED=true`, `MIN_SCORE_APPLY=0.6` - fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
+- `REMINDER_DAYS=2` - Tage zwischen Erinnerungen fuer offene Jobs
+- `REMINDER_DAILY=false` - true = taegliche Erinnerungen
+- `CLOSE_MISSING_RUNS=3` - schliesst Jobs nach N fehlenden Laeufen
+- `CLOSE_NOT_SEEN_DAYS=7` - schliesst Jobs nach N Tagen ohne Treffer
 - `STRICT_LOCATION_FILTER=true`, `ALLOWED_LOCATION_BOOST=2` - harter Ortsfilter (mit Soft-Boost)
 - `LANGUAGE_BLOCKLIST=franzosisch,francais,french,...` - filtert Jobs mit Sprach-Anforderungen
 - `REQUIREMENTS_BLOCKLIST=fuehrerschein,kat b,...` - filtert Führerschein/Auto-Pflicht
@@ -96,6 +107,6 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 ## Final Acceptance (Checkliste)
 - `python tasks.py env-check` ok (SMTP/Profil gesetzt).
 - `python tasks.py verify` ok (Config, compileall, Templates, Dirs vorhanden).
-- `python tasks.py mail-list` schickt nur neue Jobs (Delta), Titel/Firma/Ort korrekt geparst, lokal gefiltert.
+- `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`)
 - `python tasks.py prepare-applications` erzeugt DOCX in `out/`, Tracker ergaenzt, optional Kopie via `--mirror-sent`/`archive-sent`.
 - Scheduler aktiv (taeglich) mit Log; keine Duplikat-Mails ueber mehrere Tage.

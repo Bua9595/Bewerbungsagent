@@ -141,6 +141,8 @@ def _job_to_dict(job: Any) -> Dict[str, Any]:
         "score",
         "date",
         "date_found",
+        "job_uid",
+        "uid",
     ]:
         if hasattr(job, k):
             out[k] = getattr(job, k)
@@ -178,6 +180,7 @@ def _normalize_job(job: Any) -> Dict[str, Any]:
     score = data.get("score")
     score_display = "" if score is None or score == "" else score
     date = (data.get("date") or data.get("date_found") or "").strip()
+    job_uid = (data.get("job_uid") or data.get("uid") or "").strip()
 
     needs_parse = (
         ("\n" in raw_title)
@@ -210,6 +213,7 @@ def _normalize_job(job: Any) -> Dict[str, Any]:
         "match": match,
         "score": score_display,
         "date": date,
+        "job_uid": job_uid,
     }
 
 
@@ -221,15 +225,19 @@ class EmailAutomation:
         self.sender_password = config.SENDER_PASSWORD
         self.recipient_emails = config.RECIPIENT_EMAILS
 
-    def send_job_alert(self, new_jobs):
-        """Send alert for new job opportunities."""
-        if not new_jobs:
+    def send_job_alert(self, new_jobs, reminder_jobs=None):
+        """Send alert for new job opportunities and reminders."""
+        reminder_jobs = reminder_jobs or []
+        if not new_jobs and not reminder_jobs:
             return False
         if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
             return False
 
-        subject = f"Neue Job-M\u00f6glichkeiten gefunden ({len(new_jobs)} Stellen)"
-        body = self._create_job_alert_body(new_jobs)
+        subject = (
+            "Job-Alert: "
+            f"{len(new_jobs)} neu, {len(reminder_jobs)} offen"
+        )
+        body = self._create_job_alert_body(new_jobs, reminder_jobs)
 
         return self._send_email(subject, body)
 
@@ -255,53 +263,84 @@ class EmailAutomation:
 
         return self._send_email(subject, body, priority="high")
 
-    def _create_job_alert_body(self, jobs):
-        jobs_norm = [_normalize_job(j) for j in jobs]
+    def _create_job_alert_body(self, new_jobs, reminder_jobs):
+        new_norm = [_normalize_job(j) for j in new_jobs]
+        reminder_norm = [_normalize_job(j) for j in reminder_jobs]
 
         max_jobs = int(getattr(config, "EMAIL_MAX_JOBS", 200) or 200)
-        shown = jobs_norm[:max_jobs]
 
-        items_html = ""
-        for job in shown:
-            meta_parts: List[str] = []
-            if job["date"]:
-                meta_parts.append(job["date"])
-            if job["source"]:
-                meta_parts.append(job["source"])
-            if job["match"]:
-                meta_parts.append(job["match"])
-            if job["score"] != "":
-                meta_parts.append(f"Score {job['score']}")
+        def _render_items(items):
+            items_html = ""
+            for job in items:
+                meta_parts: List[str] = []
+                if job["job_uid"]:
+                    meta_parts.append(f"ID {job['job_uid']}")
+                if job["date"]:
+                    meta_parts.append(job["date"])
+                if job["source"]:
+                    meta_parts.append(job["source"])
+                if job["match"]:
+                    meta_parts.append(job["match"])
+                if job["score"] != "":
+                    meta_parts.append(f"Score {job['score']}")
 
-            meta_html = f"<small>{_escape(' | '.join(meta_parts))}</small><br>" if meta_parts else ""
+                meta_html = (
+                    f"<small>{_escape(' | '.join(meta_parts))}</small><br>"
+                    if meta_parts
+                    else ""
+                )
 
-            link_target = _escape(job["link"]) if job["link"] else "#"
-            link_label = "Bewerben" if job["link"] else "Kein Link vorhanden"
+                link_target = _escape(job["link"]) if job["link"] else "#"
+                link_label = "Bewerben" if job["link"] else "Kein Link vorhanden"
 
-            items_html += f"""
-                <li>
-                    <strong>{_escape(job["job_title"])}</strong> bei {_escape(job["company"])}<br>
-                    <em>{_escape(job["location"])}</em><br>
-                    {meta_html}
-                    <a href="{link_target}">{link_label}</a>
-                </li>
-            """
+                items_html += f"""
+                    <li>
+                        <strong>{_escape(job["job_title"])}</strong> bei {_escape(job["company"])}<br>
+                        <em>{_escape(job["location"])}</em><br>
+                        {meta_html}
+                        <a href="{link_target}">{link_label}</a>
+                    </li>
+                """
+            return items_html
 
-        if len(jobs_norm) > max_jobs:
-            items_html += (
-                f"<li>... und {len(jobs_norm) - max_jobs} weitere Stellen "
-                f"(nicht angezeigt wegen Mengenlimit)</li>"
-            )
+        total = len(new_norm) + len(reminder_norm)
+        shown_new = new_norm
+        shown_reminder = reminder_norm
+
+        if total > max_jobs:
+            if len(new_norm) >= max_jobs:
+                shown_new = new_norm[:max_jobs]
+                shown_reminder = []
+            else:
+                remaining = max_jobs - len(new_norm)
+                shown_reminder = reminder_norm[:remaining]
+
+        new_html = _render_items(shown_new)
+        reminder_html = _render_items(shown_reminder)
+
+        truncated = max(total - max_jobs, 0)
+        truncated_note = (
+            f"<p>... und {truncated} weitere Stellen "
+            f"(nicht angezeigt wegen Mengenlimit)</p>"
+            if truncated
+            else ""
+        )
 
         body = f"""
         <html>
         <body>
-            <h2>Neue Job-M\u00f6glichkeiten gefunden!</h2>
-            <p>Es wurden {len(jobs_norm)} neue Stellen gefunden, die Ihren Kriterien entsprechen:</p>
+            <h2>Job-Alert</h2>
+            <p>Neu: {len(new_norm)} | Offen: {len(reminder_norm)}</p>
+            <h3>NEW</h3>
             <ul>
-                {items_html}
+                {new_html or "<li>Keine neuen Jobs.</li>"}
             </ul>
-            <p><em>Diese E-Mail wurde automatisch vom Bua's Job-Finder generiert.</em></p>
+            <h3>OPEN REMINDERS</h3>
+            <ul>
+                {reminder_html or "<li>Keine offenen Erinnerungen.</li>"}
+            </ul>
+            {truncated_note}
+            <p><em>Diese E-Mail wurde automatisch vom Job-Finder generiert.</em></p>
         </body>
         </html>
         """

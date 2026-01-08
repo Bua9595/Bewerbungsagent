@@ -10,6 +10,9 @@ Beispiele:
   python tasks.py email-test
   python tasks.py list
   python tasks.py mail-list
+  python tasks.py mail-list --dry-run
+  python tasks.py mark-applied <job_uid>
+  python tasks.py mark-ignored --url <link>
   python tasks.py prepare-applications --force-all
 """
 
@@ -20,7 +23,7 @@ import json
 import shutil
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -106,66 +109,405 @@ def cmd_list(_args=None):
         print(f"    {j.link}")
 
 
-def cmd_mail_list(_args=None):
+def cmd_mail_list(args=None):
     """
-    Sendet Job-Alert per Mail (und ggf. WhatsApp),
-    aber filtert nur nach Score. Wenn Filter leer wäre,
-    nimmt er die Top-N, damit nie "0 Treffer" trotz Roh-Funden passiert.
+    Sendet Job-Alert per Mail (und ggf. WhatsApp).
+    Neue Jobs plus Erinnerungen fuer offene Jobs.
     """
     try:
-        from job_collector import collect_jobs, _norm_key, export_json
+        from job_collector import collect_jobs, export_json
         from email_automation import email_automation
-
-        seen_path = Path("generated/seen_jobs.json")
-        seen_path.parent.mkdir(parents=True, exist_ok=True)
-        seen = set()
-        if seen_path.exists():
-            try:
-                seen = set(json.loads(seen_path.read_text(encoding="utf-8")))
-            except Exception:
-                seen = set()
-
-        rows = collect_jobs()
-        if not rows:
-            print("Keine Treffer insgesamt. Mail/WhatsApp übersprungen.")
-            return
-        export_json(rows)
-
-        min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
-
-        # Nur Score-Filter (match kann durch Heuristik/Normalisierung mal leer sein)
-        filtered = [r for r in rows if (r.score or 0) >= min_score]
-
-        # Fallback: wenn Filter leer, nimm Top 10 statt silent skip
-        if not filtered:
-            filtered = rows[:10]
-
-        payload = [
-            r.__dict__ if hasattr(r, "__dict__") else dict(r)
-            for r in filtered
-        ]
-
-        new_payload = []
-        for r in payload:
-            key = _norm_key(r.get("title"), r.get("company"), r.get("link"))
-            if key not in seen:
-                new_payload.append(r)
-                seen.add(key)
-
-        if not new_payload:
-            print("Keine neuen Treffer (Delta leer).")
-            return
-
-        seen_path.write_text(json.dumps(sorted(seen)), encoding="utf-8")
-
-        ok = email_automation.send_job_alert(new_payload)
-        if ok:
-            print(f"E-Mail gesendet ({len(new_payload)} Stellen)")
-        else:
-            print("Mail/WhatsApp übersprungen (disabled oder Fehler).")
-
+        from job_state import (
+            OPEN_STATUSES,
+            TERMINAL_STATUSES,
+            STATUS_APPLIED,
+            STATUS_CLOSED,
+            STATUS_IGNORED,
+            STATUS_NEW,
+            STATUS_NOTIFIED,
+            build_job_uid,
+            canonicalize_url,
+            load_state,
+            now_iso,
+            parse_ts,
+            save_state,
+            should_send_reminder,
+        )
+        from logger import job_logger
     except Exception as e:
         print(f"Mail-Liste Fehler: {e}")
+        return
+
+    stamp = now_iso()
+    now_dt = parse_ts(stamp) or datetime.now(timezone.utc)
+
+    state_path = Path("generated/job_state.json")
+    seen_path = Path("generated/seen_jobs.json")
+    migrated_from_seen = (not state_path.exists()) and seen_path.exists()
+
+    state = load_state(now=stamp)
+
+    rows = collect_jobs()
+    scraped_total = len(rows)
+    if not rows:
+        applied_count = sum(
+            1 for record in state.values() if record.get("status") == STATUS_APPLIED
+        )
+        ignored_count = sum(
+            1 for record in state.values() if record.get("status") == STATUS_IGNORED
+        )
+        stats = {
+            "scraped_total": scraped_total,
+            "unique_total": 0,
+            "state_total": len(state),
+            "newly_added": 0,
+            "active_seen_this_run": 0,
+            "mailed_new_count": 0,
+            "mailed_reminder_count": 0,
+            "marked_closed_count": 0,
+            "applied_count": applied_count,
+            "ignored_count": ignored_count,
+            "dry_run": bool(args and getattr(args, "dry_run", False)),
+            "mail_sent": False,
+        }
+
+        print("Mail-Statistik:")
+        for key in [
+            "scraped_total",
+            "unique_total",
+            "state_total",
+            "newly_added",
+            "active_seen_this_run",
+            "mailed_new_count",
+            "mailed_reminder_count",
+            "marked_closed_count",
+            "applied_count",
+            "ignored_count",
+        ]:
+            print(f"{key}: {stats[key]}")
+
+        job_logger.info(
+            "Mail-Statistik "
+            + ", ".join(f"{k}={v}" for k, v in stats.items())
+        )
+        if migrated_from_seen:
+            save_state(state)
+            print("Hinweis: seen_jobs.json wurde in job_state.json migriert.")
+        return
+    export_json(rows)
+
+    min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
+
+    # Nur Score-Filter (match kann durch Heuristik/Normalisierung mal leer sein)
+    filtered = [r for r in rows if (r.score or 0) >= min_score]
+
+    # Fallback: wenn Filter leer, nimm Top 10 statt silent skip
+    if not filtered:
+        filtered = rows[:10]
+
+    payload = [
+        r.__dict__ if hasattr(r, "__dict__") else dict(r)
+        for r in filtered
+    ]
+    unique_total = len(payload)
+
+
+    reminder_days = int(os.getenv("REMINDER_DAYS", "2") or 2)
+    close_missing_runs = int(os.getenv("CLOSE_MISSING_RUNS", "3") or 3)
+    close_not_seen_days = int(os.getenv("CLOSE_NOT_SEEN_DAYS", "7") or 7)
+    daily_reminders = str(os.getenv("REMINDER_DAILY", "false")).lower() in {
+        "1",
+        "true",
+        "t",
+        "yes",
+        "y",
+        "ja",
+        "j",
+    }
+
+    seen_this_run = set()
+    newly_added = 0
+
+    def _score_val(value):
+        try:
+            return float(value)
+        except Exception:
+            return 0
+
+    for r in payload:
+        job_uid, canonical_url = build_job_uid(r)
+        seen_this_run.add(job_uid)
+
+        link = (
+            r.get("link")
+            or r.get("url")
+            or r.get("apply_url")
+            or r.get("applyLink")
+            or ""
+        )
+
+        record = state.get(job_uid)
+        if not record:
+            record = {
+                "job_uid": job_uid,
+                "source": r.get("source") or "",
+                "canonical_url": canonical_url or canonicalize_url(link) or link,
+                "link": link,
+                "title": r.get("title") or "",
+                "company": r.get("company") or "",
+                "location": r.get("location") or "",
+                "first_seen_at": stamp,
+                "last_seen_at": stamp,
+                "last_sent_at": None,
+                "status": STATUS_NEW,
+                "score": r.get("score", ""),
+                "match": r.get("match", ""),
+                "date": r.get("date", ""),
+                "missing_runs": 0,
+            }
+            state[job_uid] = record
+            newly_added += 1
+            continue
+
+        record["source"] = r.get("source") or record.get("source", "")
+        record["canonical_url"] = (
+            canonical_url
+            or record.get("canonical_url", "")
+            or canonicalize_url(link)
+            or link
+        )
+        record["link"] = link or record.get("link", "")
+        record["title"] = r.get("title") or record.get("title", "")
+        record["company"] = r.get("company") or record.get("company", "")
+        record["location"] = r.get("location") or record.get("location", "")
+        if r.get("score") not in (None, ""):
+            record["score"] = r.get("score")
+        if r.get("match"):
+            record["match"] = r.get("match")
+        if r.get("date"):
+            record["date"] = r.get("date")
+        record["last_seen_at"] = stamp
+        record["missing_runs"] = 0
+
+        status = record.get("status") or STATUS_NEW
+        if status == STATUS_CLOSED:
+            status = STATUS_NOTIFIED if record.get("last_sent_at") else STATUS_NEW
+        if status not in (STATUS_APPLIED, STATUS_IGNORED):
+            record["status"] = status
+
+    marked_closed_count = 0
+    for uid, record in state.items():
+        if uid in seen_this_run:
+            continue
+        if record.get("status") in (STATUS_APPLIED, STATUS_IGNORED, STATUS_CLOSED):
+            continue
+        record["missing_runs"] = int(record.get("missing_runs", 0)) + 1
+        last_seen = parse_ts(record.get("last_seen_at"))
+        days_missing = (now_dt - last_seen).days if last_seen else 0
+        if (
+            close_missing_runs > 0
+            and record["missing_runs"] >= close_missing_runs
+        ) or (
+            close_not_seen_days > 0
+            and days_missing >= close_not_seen_days
+        ):
+            record["status"] = STATUS_CLOSED
+            marked_closed_count += 1
+
+    new_jobs = []
+    reminder_jobs = []
+    new_uids = set()
+
+    for uid in seen_this_run:
+        record = state.get(uid)
+        if not record:
+            continue
+        if record.get("status") in TERMINAL_STATUSES:
+            continue
+        if record.get("status") == STATUS_NEW:
+            new_jobs.append(record)
+            new_uids.add(uid)
+
+    for uid in seen_this_run:
+        record = state.get(uid)
+        if not record:
+            continue
+        if record.get("status") in TERMINAL_STATUSES:
+            continue
+        if (
+            record.get("status") in OPEN_STATUSES
+            and should_send_reminder(
+                record.get("last_sent_at"),
+                now_dt,
+                reminder_days,
+                daily_reminders,
+            )
+        ):
+            if uid not in new_uids:
+                reminder_jobs.append(record)
+
+    new_jobs.sort(key=lambda r: _score_val(r.get("score")), reverse=True)
+    reminder_jobs.sort(key=lambda r: _score_val(r.get("score")), reverse=True)
+
+    active_seen_this_run = sum(
+        1
+        for uid in seen_this_run
+        if uid in state and state[uid].get("status") not in TERMINAL_STATUSES
+    )
+    applied_count = sum(
+        1 for record in state.values() if record.get("status") == STATUS_APPLIED
+    )
+    ignored_count = sum(
+        1 for record in state.values() if record.get("status") == STATUS_IGNORED
+    )
+
+    mailed_new_count = 0
+    mailed_reminder_count = 0
+    mail_sent = False
+
+    if new_jobs or reminder_jobs:
+        if args and getattr(args, "dry_run", False):
+            mailed_new_count = len(new_jobs)
+            mailed_reminder_count = len(reminder_jobs)
+            print(
+                f"[DRY RUN] Mail waere gesendet worden "
+                f"({mailed_new_count} neu, {mailed_reminder_count} Reminder)."
+            )
+        else:
+            ok = email_automation.send_job_alert(new_jobs, reminder_jobs)
+            if ok:
+                mail_sent = True
+                mailed_new_count = len(new_jobs)
+                mailed_reminder_count = len(reminder_jobs)
+                for record in new_jobs + reminder_jobs:
+                    record["status"] = STATUS_NOTIFIED
+                    record["last_sent_at"] = stamp
+                print(
+                    f"E-Mail gesendet ({mailed_new_count} neu, "
+                    f"{mailed_reminder_count} Reminder)"
+                )
+            else:
+                print("Mail/WhatsApp uebersprungen (disabled oder Fehler).")
+    else:
+        print("Keine neuen oder offenen Jobs zum Senden.")
+
+    save_state(state)
+
+    stats = {
+        "scraped_total": scraped_total,
+        "unique_total": unique_total,
+        "state_total": len(state),
+        "newly_added": newly_added,
+        "active_seen_this_run": active_seen_this_run,
+        "mailed_new_count": mailed_new_count,
+        "mailed_reminder_count": mailed_reminder_count,
+        "marked_closed_count": marked_closed_count,
+        "applied_count": applied_count,
+        "ignored_count": ignored_count,
+        "dry_run": bool(args and getattr(args, "dry_run", False)),
+        "mail_sent": mail_sent,
+    }
+
+    print("Mail-Statistik:")
+    for key in [
+        "scraped_total",
+        "unique_total",
+        "state_total",
+        "newly_added",
+        "active_seen_this_run",
+        "mailed_new_count",
+        "mailed_reminder_count",
+        "marked_closed_count",
+        "applied_count",
+        "ignored_count",
+    ]:
+        print(f"{key}: {stats[key]}")
+
+    job_logger.info(
+        "Mail-Statistik "
+        + ", ".join(f"{k}={v}" for k, v in stats.items())
+    )
+    if migrated_from_seen:
+        print("Hinweis: seen_jobs.json wurde in job_state.json migriert.")
+
+
+def _resolve_job_uid(state, job_uid, url):
+    from job_state import canonicalize_url
+
+    if job_uid:
+        matches = [uid for uid in state.keys() if uid.startswith(job_uid)]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            print("Mehrere Treffer fuer job_uid, bitte laenger angeben.")
+            return None
+        print("Keine Treffer fuer job_uid.")
+        return None
+
+    if url:
+        target = url.strip()
+        target_canon = canonicalize_url(target)
+        matches = []
+        for uid, record in state.items():
+            link = record.get("link") or ""
+            canon = record.get("canonical_url") or ""
+            if target and target == link:
+                matches.append(uid)
+                continue
+            if target_canon:
+                if canon and canonicalize_url(canon) == target_canon:
+                    matches.append(uid)
+                    continue
+                if link and canonicalize_url(link) == target_canon:
+                    matches.append(uid)
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            print("Mehrere Treffer fuer URL, bitte job_uid nutzen.")
+            return None
+        print("Keine Treffer fuer URL.")
+        return None
+
+    print("Bitte job_uid oder --url angeben.")
+    return None
+
+
+def _mark_job_state(args, status):
+    from job_state import load_state, save_state
+
+    state = load_state()
+    if not state:
+        print("Kein job_state.json vorhanden.")
+        return
+
+    job_uid = _resolve_job_uid(state, getattr(args, "job_uid", ""), getattr(args, "url", ""))
+    if not job_uid:
+        return
+
+    record = state.get(job_uid)
+    if not record:
+        print("Job nicht gefunden.")
+        return
+
+    prev = record.get("status") or ""
+    record["status"] = status
+    save_state(state)
+
+    title = record.get("title") or "Titel unbekannt"
+    company = record.get("company") or "Firma unbekannt"
+    print(f"{job_uid}: {prev} -> {status} ({title} - {company})")
+
+
+def cmd_mark_applied(args):
+    from job_state import STATUS_APPLIED
+
+    _mark_job_state(args, STATUS_APPLIED)
+
+
+def cmd_mark_ignored(args):
+    from job_state import STATUS_IGNORED
+
+    _mark_job_state(args, STATUS_IGNORED)
 
 
 def cmd_archive_sent(args):
@@ -741,7 +1083,18 @@ def main(argv=None):
     sub.add_parser("open")
     sub.add_parser("email-test")
     sub.add_parser("list")
-    sub.add_parser("mail-list")
+    mail = sub.add_parser("mail-list")
+    mail.add_argument(
+        "--dry-run", action="store_true", help="Nur simulieren, keine Mails senden"
+    )
+
+    mark_applied = sub.add_parser("mark-applied")
+    mark_applied.add_argument("job_uid", nargs="?", help="Job UID")
+    mark_applied.add_argument("--url", default="", help="Job URL")
+
+    mark_ignored = sub.add_parser("mark-ignored")
+    mark_ignored.add_argument("job_uid", nargs="?", help="Job UID")
+    mark_ignored.add_argument("--url", default="", help="Job URL")
 
     prep = sub.add_parser("prepare-applications")
     prep.add_argument("--proj", default="", help="Projekt-Root (default: cwd)")
@@ -803,6 +1156,10 @@ def main(argv=None):
         cmd_list(args)
     elif args.cmd == "mail-list":
         cmd_mail_list(args)
+    elif args.cmd == "mark-applied":
+        cmd_mark_applied(args)
+    elif args.cmd == "mark-ignored":
+        cmd_mark_ignored(args)
     elif args.cmd == "prepare-applications":
         cmd_prepare_applications(args)
     elif args.cmd == "send-applications":
