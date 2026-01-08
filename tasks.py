@@ -443,6 +443,7 @@ def cmd_mail_list(args=None):
     if migrated_from_seen:
         print("Hinweis: seen_jobs.json wurde in job_state.json migriert.")
     write_tracker(state, tracker_path, tracker_rows)
+
 def cmd_tracker_sync(_args=None):
     from job_state import load_state, save_state
     from job_tracker import (
@@ -460,7 +461,7 @@ def cmd_tracker_sync(_args=None):
     tracker_path = get_tracker_path()
     tracker_rows = load_tracker(tracker_path)
     if not tracker_rows:
-        print("Kein job_tracker.csv vorhanden.")
+        print("Kein job_tracker vorhanden.")
         return
 
     updates = apply_tracker_marks(state, tracker_rows)

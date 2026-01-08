@@ -30,7 +30,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `python tasks.py env-check` – zeigt SMTP/Empfänger/Profil
 - `python tasks.py verify` – Config/compileall/Verzeichnis-Check
 - `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`, mit `--dry-run` nur simulieren)
-- `python tasks.py tracker-sync` - synchronisiert Markierungen aus `generated/job_tracker.csv` in den Status
+- `python tasks.py tracker-sync` - synchronisiert Markierungen aus `generated/job_tracker.xlsx` in den Status
 - `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)
 - `python tasks.py mark-ignored <job_uid> [--url <link>]` - markiert Job als ignoriert (stoppt Erinnerungen)
 - `python tasks.py list` – sammelt und gibt Textliste + CSV aus
@@ -46,7 +46,8 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - Anforderungen: `REQUIREMENTS_BLOCKLIST` filtert z.B. Führerschein-Pflicht.
 - Mail-Body: parst jobs.ch/jobup-Multiline-Titel (Arbeitsort/Firma), zeigt Quelle/Match/Score; Soft-Cap `EMAIL_MAX_JOBS` (Default 200).
 - Lifecycle: Jobs werden in `generated/job_state.json` verwaltet (new/notified/applied/ignored/closed).
-  - Tracker: `generated/job_tracker.csv` wird nach jedem Lauf aktualisiert (Spalten `erledigt` + `aktion`).
+  - Tracker: `generated/job_tracker.xlsx` wird nach jedem Lauf aktualisiert (Spalte `erledigt` mit Checkbox-Symbolen, `aktion` optional).
+  - CSV wird weiterhin unterstuetzt (setze `JOB_TRACKER_FILE=generated/job_tracker.csv`).
   - `mail-list` liest den Tracker automatisch ein; alternativ `python tasks.py tracker-sync`.
   - Job-UID wird in der Mail angezeigt (fuer mark-applied/mark-ignored).
   - Erinnerungen fuer offene Jobs nach `REMINDER_DAYS` (oder taeglich via `REMINDER_DAILY=true`).
@@ -64,7 +65,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 ## Dateien/Ordner
 - `data/jobs.json` - letzter Job-Snapshot
 - `generated/job_state.json` - Lifecycle-Status je Job (single source of truth fuer Mailings)
-- `generated/job_tracker.csv` - Tabelle zum Abhaken/Notizen (erledigt/aktion)
+- `generated/job_tracker.xlsx` - Tabelle zum Abhaken/Notizen (erledigt/aktion)
 - `Anschreiben_Templates/` - Templates (`T1_ITSup.docx`, `T2_Systemtechnik.docx`, `T3_Logistik.docx`)
 - `out/` - generierte Anschreiben
 - `bewerbungen_tracking.csv` - Tracker (wird bei Bedarf angelegt/erweitert)
@@ -88,7 +89,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 ## Erweiterte ENV (optional)
 - `EXPORT_CSV=true` - exportiert Treffer nach `generated/jobs_latest.csv`
 - `EXPORT_CSV_PATH=generated/jobs_latest.csv` - Zielpfad fuer CSV
-- `JOB_TRACKER_FILE=generated/job_tracker.csv` - Pfad fuer die Haken-Tabelle
+- `JOB_TRACKER_FILE=generated/job_tracker.xlsx` - Pfad fuer die Haken-Tabelle
 - `MIN_SCORE_MAIL=2` - Mindestscore fuer Mail-Versand
 - `LOCATION_BOOST_KM=15` - heuristischer Boost (String-Match Location)
 - `BLACKLIST_COMPANIES=` - Komma-Liste ignorierter Firmen
