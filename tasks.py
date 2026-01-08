@@ -79,13 +79,18 @@ def _release_run_lock(lock_path: Path) -> None:
         return
 
 
-def _acquire_run_lock(lock_path: Path, ttl_min: int) -> bool:
+def _acquire_run_lock(lock_path: Path, ttl_min: int, logger=None) -> bool:
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     if lock_path.exists():
         if not _lock_is_stale(lock_path, ttl_min):
-            print(f"Run-Lock aktiv, Abbruch: {lock_path}")
+            msg = f"Run-Lock aktiv, Abbruch: {lock_path}"
+            print(msg)
+            if logger:
+                logger.warning(msg)
             return False
         _release_run_lock(lock_path)
+        if logger:
+            logger.info(f"Stale Run-Lock entfernt: {lock_path}")
     try:
         from job_state import now_iso
 
@@ -97,12 +102,20 @@ def _acquire_run_lock(lock_path: Path, ttl_min: int) -> bool:
         with lock_path.open("x", encoding="utf-8") as f:
             json.dump(payload, f)
     except FileExistsError:
-        print(f"Run-Lock aktiv, Abbruch: {lock_path}")
+        msg = f"Run-Lock aktiv, Abbruch: {lock_path}"
+        print(msg)
+        if logger:
+            logger.warning(msg)
         return False
     except Exception as e:
-        print(f"Run-Lock konnte nicht erstellt werden: {e}")
+        msg = f"Run-Lock konnte nicht erstellt werden: {e}"
+        print(msg)
+        if logger:
+            logger.warning(msg)
         return False
     atexit.register(_release_run_lock, lock_path)
+    if logger:
+        logger.info(f"Run-Lock gesetzt: {lock_path}")
     return True
 
 
@@ -221,7 +234,7 @@ def cmd_mail_list(args=None):
 
     lock_path = _get_run_lock_path()
     lock_ttl_min = _get_run_lock_ttl_min()
-    if not _acquire_run_lock(lock_path, lock_ttl_min):
+    if not _acquire_run_lock(lock_path, lock_ttl_min, job_logger):
         return
 
     stamp = now_iso()
@@ -285,6 +298,8 @@ def cmd_mail_list(args=None):
         if migrated_from_seen:
             print("Hinweis: seen_jobs.json wurde in job_state.json migriert.")
         write_tracker(state, tracker_path, tracker_rows)
+        job_logger.info(f"Run-Lock freigegeben: {lock_path}")
+        _release_run_lock(lock_path)
         return
     export_json(rows)
 
@@ -522,6 +537,8 @@ def cmd_mail_list(args=None):
     if migrated_from_seen:
         print("Hinweis: seen_jobs.json wurde in job_state.json migriert.")
     write_tracker(state, tracker_path, tracker_rows)
+    job_logger.info(f"Run-Lock freigegeben: {lock_path}")
+    _release_run_lock(lock_path)
 
 def cmd_tracker_sync(_args=None):
     from job_state import load_state, save_state

@@ -103,7 +103,7 @@ HTML_PAGE = """<!doctype html>
       gap: 12px;
       align-items: center;
     }
-    .controls input[type="text"] {
+    .controls input[type="text"], .controls select {
       padding: 10px 12px;
       min-width: 240px;
       border-radius: 10px;
@@ -224,6 +224,15 @@ HTML_PAGE = """<!doctype html>
         <input type="checkbox" id="showClosed">
         Show closed
       </label>
+      <label class="toggle">
+        Sort:
+        <select id="sort">
+          <option value="last_seen_desc">Last seen</option>
+          <option value="score_desc">Score</option>
+          <option value="company_asc">Company</option>
+          <option value="status_asc">Status</option>
+        </select>
+      </label>
       <input type="text" id="search" placeholder="Suche nach Titel, Firma, Ort">
       <span class="muted" id="lastUpdated"></span>
     </div>
@@ -237,8 +246,11 @@ HTML_PAGE = """<!doctype html>
             <th>Ort</th>
             <th>Status</th>
             <th>Score</th>
+            <th>Match</th>
             <th>Quelle</th>
+            <th>Erst gesehen</th>
             <th>Zuletzt gesehen</th>
+            <th>UID</th>
             <th>Aktion</th>
           </tr>
         </thead>
@@ -248,7 +260,12 @@ HTML_PAGE = """<!doctype html>
     </div>
   </div>
   <script>
-    const state = { includeDone: false, includeClosed: false, query: "" };
+    const state = {
+      includeDone: false,
+      includeClosed: false,
+      query: "",
+      sort: "last_seen_desc",
+    };
     let lastPayload = null;
 
     const rowsEl = document.getElementById("rows");
@@ -302,9 +319,47 @@ HTML_PAGE = """<!doctype html>
     function jobMatches(job, query) {
       if (!query) return true;
       const text = [
-        job.title, job.company, job.location, job.source, job.status
+        job.title,
+        job.company,
+        job.location,
+        job.source,
+        job.status,
+        job.job_uid,
       ].join(" ").toLowerCase();
       return text.includes(query);
+    }
+
+    function sortJobs(jobs) {
+      const sorted = [...jobs];
+      const key = state.sort;
+      const statusRank = {
+        "new": 0,
+        "notified": 1,
+        "applied": 2,
+        "ignored": 3,
+        "closed": 4,
+      };
+      function ts(value) {
+        const d = new Date(value || "");
+        return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+      }
+      function score(value) {
+        const s = parseFloat(value);
+        return Number.isNaN(s) ? 0 : s;
+      }
+      sorted.sort((a, b) => {
+        if (key === "score_desc") {
+          return score(b.score) - score(a.score);
+        }
+        if (key === "company_asc") {
+          return (a.company || "").localeCompare(b.company || "");
+        }
+        if (key === "status_asc") {
+          return (statusRank[a.status] ?? 99) - (statusRank[b.status] ?? 99);
+        }
+        return ts(b.last_seen_at) - ts(a.last_seen_at);
+      });
+      return sorted;
     }
 
     async function api(path, options) {
@@ -325,9 +380,10 @@ HTML_PAGE = """<!doctype html>
     }
 
     function render(payload) {
-      const jobs = (payload.jobs || []).filter((job) =>
+      const filtered = (payload.jobs || []).filter((job) =>
         jobMatches(job, state.query)
       );
+      const jobs = sortJobs(filtered);
       rowsEl.innerHTML = "";
       for (const job of jobs) {
         const tr = document.createElement("tr");
@@ -374,13 +430,26 @@ HTML_PAGE = """<!doctype html>
         scoreTd.textContent = job.score || "";
         tr.appendChild(scoreTd);
 
+        const matchTd = document.createElement("td");
+        matchTd.textContent = job.match || "";
+        tr.appendChild(matchTd);
+
         const sourceTd = document.createElement("td");
         sourceTd.textContent = job.source || "";
         tr.appendChild(sourceTd);
 
+        const firstSeenTd = document.createElement("td");
+        firstSeenTd.textContent = fmt(job.first_seen_at);
+        tr.appendChild(firstSeenTd);
+
         const seenTd = document.createElement("td");
         seenTd.textContent = fmt(job.last_seen_at);
         tr.appendChild(seenTd);
+
+        const uidTd = document.createElement("td");
+        uidTd.textContent = job.job_uid ? job.job_uid.slice(0, 10) : "";
+        uidTd.title = job.job_uid || "";
+        tr.appendChild(uidTd);
 
         const actionTd = document.createElement("td");
         if (job.status === "new" || job.status === "notified") {
@@ -423,6 +492,12 @@ HTML_PAGE = """<!doctype html>
     document.getElementById("showClosed").addEventListener("change", (ev) => {
       state.includeClosed = ev.target.checked;
       loadJobs();
+    });
+    document.getElementById("sort").addEventListener("change", (ev) => {
+      state.sort = ev.target.value;
+      if (lastPayload) {
+        render(lastPayload);
+      }
     });
     document.getElementById("search").addEventListener("input", (ev) => {
       state.query = ev.target.value.trim().toLowerCase();
@@ -492,6 +567,7 @@ def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
                 "link": record.get("link") or record.get("canonical_url") or "",
                 "score": record.get("score") or "",
                 "match": record.get("match") or "",
+                "first_seen_at": record.get("first_seen_at") or "",
                 "last_seen_at": record.get("last_seen_at") or "",
             }
         )

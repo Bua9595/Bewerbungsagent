@@ -50,7 +50,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
   - Tracker: `generated/job_tracker.xlsx` wird nach jedem Lauf aktualisiert (Spalte `erledigt` mit Checkbox-Symbolen, `aktion` optional).
   - CSV wird weiterhin unterstuetzt (setze `JOB_TRACKER_FILE=generated/job_tracker.csv`).
   - `mail-list` liest den Tracker automatisch ein; alternativ `python tasks.py tracker-sync`.
-  - Klickbar im Browser via `python tasks.py tracker-ui` (setzt Status in `job_state.json`).
+  - Klickbar im Browser via `python tasks.py tracker-ui` (setzt Status in `job_state.json`, Sortierung/Filter in der UI).
   - Tracker-UI zeigt erledigt/closed standardmaessig nur aus den letzten `TRACKER_UI_DAYS` Tagen.
   - Job-UID wird in der Mail angezeigt (fuer mark-applied/mark-ignored).
   - Erinnerungen fuer offene Jobs nach `REMINDER_DAYS` (oder taeglich via `REMINDER_DAILY=true`).
