@@ -12,6 +12,7 @@ Beispiele:
   python tasks.py mail-list
   python tasks.py mail-list --dry-run
   python tasks.py tracker-sync
+  python tasks.py tracker-ui
   python tasks.py mark-applied <job_uid>
   python tasks.py mark-ignored --url <link>
   python tasks.py prepare-applications --force-all
@@ -469,6 +470,16 @@ def cmd_tracker_sync(_args=None):
         save_state(state)
     write_tracker(state, tracker_path, tracker_rows)
     print(f"Tracker Sync: {updates} Aktualisierungen.")
+
+
+def cmd_tracker_ui(args):
+    from tracker_ui import run_tracker_ui
+
+    run_tracker_ui(
+        host=getattr(args, "host", "127.0.0.1"),
+        port=getattr(args, "port", 8765),
+        open_browser=bool(getattr(args, "open", False)),
+    )
 
 
 def _resolve_job_uid(state, job_uid, url):
@@ -1137,6 +1148,10 @@ def main(argv=None):
     )
 
     sub.add_parser("tracker-sync")
+    tracker_ui = sub.add_parser("tracker-ui")
+    tracker_ui.add_argument("--host", default="127.0.0.1")
+    tracker_ui.add_argument("--port", type=int, default=8765)
+    tracker_ui.add_argument("--open", action="store_true", help="Browser oeffnen")
 
     mark_applied = sub.add_parser("mark-applied")
     mark_applied.add_argument("job_uid", nargs="?", help="Job UID")
@@ -1208,6 +1223,8 @@ def main(argv=None):
         cmd_mail_list(args)
     elif args.cmd == "tracker-sync":
         cmd_tracker_sync(args)
+    elif args.cmd == "tracker-ui":
+        cmd_tracker_ui(args)
     elif args.cmd == "mark-applied":
         cmd_mark_applied(args)
     elif args.cmd == "mark-ignored":

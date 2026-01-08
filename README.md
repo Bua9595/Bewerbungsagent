@@ -31,6 +31,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `python tasks.py verify` – Config/compileall/Verzeichnis-Check
 - `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`, mit `--dry-run` nur simulieren)
 - `python tasks.py tracker-sync` - synchronisiert Markierungen aus `generated/job_tracker.xlsx` in den Status
+- `python tasks.py tracker-ui` - lokale Klick-UI fuer `erledigt`/`ignored` (http://127.0.0.1:8765)
 - `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)
 - `python tasks.py mark-ignored <job_uid> [--url <link>]` - markiert Job als ignoriert (stoppt Erinnerungen)
 - `python tasks.py list` – sammelt und gibt Textliste + CSV aus
@@ -49,6 +50,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
   - Tracker: `generated/job_tracker.xlsx` wird nach jedem Lauf aktualisiert (Spalte `erledigt` mit Checkbox-Symbolen, `aktion` optional).
   - CSV wird weiterhin unterstuetzt (setze `JOB_TRACKER_FILE=generated/job_tracker.csv`).
   - `mail-list` liest den Tracker automatisch ein; alternativ `python tasks.py tracker-sync`.
+  - Klickbar im Browser via `python tasks.py tracker-ui` (setzt Status in `job_state.json`).
   - Job-UID wird in der Mail angezeigt (fuer mark-applied/mark-ignored).
   - Erinnerungen fuer offene Jobs nach `REMINDER_DAYS` (oder taeglich via `REMINDER_DAILY=true`).
   - Jobs werden als closed markiert, wenn sie `CLOSE_MISSING_RUNS` Laeufe fehlen oder seit `CLOSE_NOT_SEEN_DAYS` Tagen nicht gesehen wurden.
@@ -94,6 +96,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `LOCATION_BOOST_KM=15` - heuristischer Boost (String-Match Location)
 - `BLACKLIST_COMPANIES=` - Komma-Liste ignorierter Firmen
 - `BLACKLIST_KEYWORDS=junior` - Titel-Keywords zum Ausschluss
+- `INCLUDE_KEYWORDS=it,helpdesk,service desk,...` - Optionaler Include-Filter (erzwingt IT-bezogene Treffer)
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` - Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
 - `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow

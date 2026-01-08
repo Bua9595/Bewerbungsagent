@@ -45,6 +45,13 @@ python tasks.py mail-list
 *CSV wird weiterhin unterstuetzt via `JOB_TRACKER_FILE=generated/job_tracker.csv`.*
 *Empfehlung: Täglich morgens (z.B. 09:00).*
 
+### Interaktive Tracker-UI (optional)
+Lokale Klick-UI fuer erledigt/ignored:
+```bash
+python tasks.py tracker-ui
+```
+*URL: http://127.0.0.1:8765*
+
 ### Bewerbungen vorbereiten (Batch)
 Erstellt DOCX-Anschreiben für alle "passenden" Jobs (Status "OK" oder manuell geprüft).
 ```bash

@@ -271,6 +271,13 @@ REQUIREMENTS_BLOCKLIST = {
     for x in (os.getenv("REQUIREMENTS_BLOCKLIST", "") or "").split(",")
     if x.strip()
 }
+INCLUDE_KEYWORDS = _normalize_terms(
+    {
+        x.strip()
+        for x in (os.getenv("INCLUDE_KEYWORDS", "") or "").split(",")
+        if x.strip()
+    }
+)
 BLOCKLIST_TERMS = _normalize_terms(
     KEYWORD_BLACKLIST | LANGUAGE_BLOCKLIST | REQUIREMENTS_BLOCKLIST
 )
@@ -499,6 +506,16 @@ def _has_blocked_keywords(job: Job, blocked: set[str]) -> bool:
     blob = " ".join([job.title or "", job.raw_title or "", job.location or ""])
     normalized = _normalize_text(blob)
     return any(term in normalized for term in blocked)
+
+
+def _has_required_keywords(job: Job, required: set[str]) -> bool:
+    if not required:
+        return True
+    blob = " ".join(
+        [job.title or "", job.raw_title or "", job.company or "", job.location or ""]
+    )
+    normalized = _normalize_text(blob)
+    return any(term in normalized for term in required)
 
 
 _DURATION_RE = re.compile(r"(?:(\d+)d)?(\d{1,2}):(\d{2}):(\d{2})")
@@ -1010,6 +1027,9 @@ def collect_jobs(
                 continue
             if ALLOWED_LOCATIONS and not allowed_match:
                 continue
+
+        if not _has_required_keywords(j, INCLUDE_KEYWORDS):
+            continue
 
         if (j.company or "").lower() in BLACKLIST:
             continue
