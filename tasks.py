@@ -11,6 +11,7 @@ Beispiele:
   python tasks.py list
   python tasks.py mail-list
   python tasks.py mail-list --dry-run
+  python tasks.py tracker-sync
   python tasks.py mark-applied <job_uid>
   python tasks.py mark-ignored --url <link>
   python tasks.py prepare-applications --force-all
@@ -133,6 +134,12 @@ def cmd_mail_list(args=None):
             save_state,
             should_send_reminder,
         )
+        from job_tracker import (
+            apply_tracker_marks,
+            get_tracker_path,
+            load_tracker,
+            write_tracker,
+        )
         from logger import job_logger
     except Exception as e:
         print(f"Mail-Liste Fehler: {e}")
@@ -146,6 +153,10 @@ def cmd_mail_list(args=None):
     migrated_from_seen = (not state_path.exists()) and seen_path.exists()
 
     state = load_state(now=stamp)
+
+    tracker_path = get_tracker_path()
+    tracker_rows = load_tracker(tracker_path)
+    tracker_updates = apply_tracker_marks(state, tracker_rows)
 
     rows = collect_jobs()
     scraped_total = len(rows)
@@ -190,9 +201,11 @@ def cmd_mail_list(args=None):
             "Mail-Statistik "
             + ", ".join(f"{k}={v}" for k, v in stats.items())
         )
-        if migrated_from_seen:
+        if migrated_from_seen or tracker_updates:
             save_state(state)
+        if migrated_from_seen:
             print("Hinweis: seen_jobs.json wurde in job_state.json migriert.")
+        write_tracker(state, tracker_path, tracker_rows)
         return
     export_json(rows)
 
@@ -429,6 +442,32 @@ def cmd_mail_list(args=None):
     )
     if migrated_from_seen:
         print("Hinweis: seen_jobs.json wurde in job_state.json migriert.")
+    write_tracker(state, tracker_path, tracker_rows)
+def cmd_tracker_sync(_args=None):
+    from job_state import load_state, save_state
+    from job_tracker import (
+        apply_tracker_marks,
+        get_tracker_path,
+        load_tracker,
+        write_tracker,
+    )
+
+    state = load_state()
+    if not state:
+        print("Kein job_state.json vorhanden.")
+        return
+
+    tracker_path = get_tracker_path()
+    tracker_rows = load_tracker(tracker_path)
+    if not tracker_rows:
+        print("Kein job_tracker.csv vorhanden.")
+        return
+
+    updates = apply_tracker_marks(state, tracker_rows)
+    if updates:
+        save_state(state)
+    write_tracker(state, tracker_path, tracker_rows)
+    print(f"Tracker Sync: {updates} Aktualisierungen.")
 
 
 def _resolve_job_uid(state, job_uid, url):
@@ -492,6 +531,14 @@ def _mark_job_state(args, status):
     prev = record.get("status") or ""
     record["status"] = status
     save_state(state)
+    try:
+        from job_tracker import get_tracker_path, load_tracker, write_tracker
+
+        tracker_path = get_tracker_path()
+        tracker_rows = load_tracker(tracker_path)
+        write_tracker(state, tracker_path, tracker_rows)
+    except Exception:
+        pass
 
     title = record.get("title") or "Titel unbekannt"
     company = record.get("company") or "Firma unbekannt"
@@ -1088,6 +1135,8 @@ def main(argv=None):
         "--dry-run", action="store_true", help="Nur simulieren, keine Mails senden"
     )
 
+    sub.add_parser("tracker-sync")
+
     mark_applied = sub.add_parser("mark-applied")
     mark_applied.add_argument("job_uid", nargs="?", help="Job UID")
     mark_applied.add_argument("--url", default="", help="Job URL")
@@ -1156,6 +1205,8 @@ def main(argv=None):
         cmd_list(args)
     elif args.cmd == "mail-list":
         cmd_mail_list(args)
+    elif args.cmd == "tracker-sync":
+        cmd_tracker_sync(args)
     elif args.cmd == "mark-applied":
         cmd_mark_applied(args)
     elif args.cmd == "mark-ignored":

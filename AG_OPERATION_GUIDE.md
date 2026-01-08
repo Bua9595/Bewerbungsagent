@@ -41,6 +41,7 @@ Führt die Suche aus, filtert Jobs und sendet eine E-Mail mit den besten Treffer
 ```bash
 python tasks.py mail-list
 ```
+*Hinweis: `mail-list` synchronisiert automatisch Markierungen aus `generated/job_tracker.csv`.*
 *Empfehlung: Täglich morgens (z.B. 09:00).*
 
 ### Bewerbungen vorbereiten (Batch)
@@ -59,6 +60,8 @@ python tasks.py list
 ## 4. Wichtige Pfade & Artefakte
 
 - `data/jobs.json`: Cache der letzten Suche (wird von `list`/`mail-list` geschrieben).
+- `generated/job_state.json`: Lifecycle-Status der Jobs (Mailing-Quelle)
+- `generated/job_tracker.csv`: Tabelle zum Abhaken (erledigt/aktion)
 - `out/`: Zielordner für generierte Bewerbungen (`.docx`).
 - `bewerbungen_tracking.csv`: Logbuch aller erstellten Bewerbungen.
 - `logs/`: Logfiles (rotierend).
