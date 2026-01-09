@@ -58,7 +58,7 @@ HTML_PAGE = """<!doctype html>
       min-height: 100vh;
     }
     .shell {
-      max-width: 1200px;
+      max-width: 100%;
       margin: 0 auto;
       padding: 28px 20px 50px;
       animation: fadeUp 0.6s ease-out;
@@ -144,11 +144,12 @@ HTML_PAGE = """<!doctype html>
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 16px;
-      overflow: hidden;
+      overflow-x: auto;
       box-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
     }
     table {
       width: 100%;
+      min-width: 1400px;
       border-collapse: collapse;
       font-size: 14px;
     }

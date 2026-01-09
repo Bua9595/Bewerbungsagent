@@ -248,6 +248,11 @@ ALLOWED_LOCATIONS = {
     for x in (os.getenv("ALLOWED_LOCATIONS", "") or "").split(",")
     if x.strip()
 }
+HARD_ALLOWED_LOCATIONS = {
+    x.strip().lower()
+    for x in (os.getenv("HARD_ALLOWED_LOCATIONS", "") or "").split(",")
+    if x.strip()
+}
 AUTO_FIT_ENABLED = str(os.getenv("AUTO_FIT_ENABLED", "false")).lower() in TRUTHY
 MIN_SCORE_APPLY = float(os.getenv("MIN_SCORE_APPLY", "1") or 1)
 
@@ -1004,9 +1009,17 @@ def collect_jobs(
         allowed_match = (
             _is_allowed_location(j, ALLOWED_LOCATIONS) if ALLOWED_LOCATIONS else True
         )
+        hard_allowed_match = (
+            _is_allowed_location(j, HARD_ALLOWED_LOCATIONS)
+            if HARD_ALLOWED_LOCATIONS
+            else True
+        )
         is_remote = _is_remote(j)
 
         if is_remote and not ALLOW_REMOTE:
+            continue
+
+        if HARD_ALLOWED_LOCATIONS and not hard_allowed_match:
             continue
 
         if transit_enabled and not is_remote:
