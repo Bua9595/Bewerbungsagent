@@ -41,6 +41,7 @@ class Job:
     fit: str = ""
     application_email: str = ""
     contact_name: str = ""
+    commute_min: int | None = None
 
 
 def _mk_driver(headless: bool = True) -> webdriver.Chrome:
@@ -218,6 +219,48 @@ def _normalize_text(value: str) -> str:
     return text
 
 
+def _parse_commute_map(raw: str) -> list[tuple[str, int]]:
+    if not raw:
+        return []
+    items: list[tuple[str, int]] = []
+    for chunk in raw.split(","):
+        part = chunk.strip()
+        if not part:
+            continue
+        if ":" in part:
+            name, minutes_raw = part.split(":", 1)
+        elif "=" in part:
+            name, minutes_raw = part.split("=", 1)
+        else:
+            continue
+        key = _normalize_text(name)
+        if not key:
+            continue
+        nums = [int(x) for x in re.findall(r"\d+", minutes_raw)]
+        if not nums:
+            continue
+        minutes = max(nums)
+        items.append((key, minutes))
+    items.sort(key=lambda item: len(item[0]), reverse=True)
+    return items
+
+
+def _commute_minutes_for(
+    job: "Job", commute_map: list[tuple[str, int]]
+) -> int | None:
+    if not commute_map:
+        return None
+    texts = [
+        _normalize_text(job.location or ""),
+        _normalize_text(job.title or ""),
+        _normalize_text(job.raw_title or ""),
+    ]
+    for key, minutes in commute_map:
+        if key and any(key in t for t in texts):
+            return minutes
+    return None
+
+
 def _normalize_terms(items: set[str]) -> set[str]:
     return {_normalize_text(x) for x in items if x}
 
@@ -253,6 +296,15 @@ HARD_ALLOWED_LOCATIONS = {
     for x in (os.getenv("HARD_ALLOWED_LOCATIONS", "") or "").split(",")
     if x.strip()
 }
+COMMUTE_MINUTES = _parse_commute_map(os.getenv("COMMUTE_MINUTES", "") or "")
+try:
+    COMMUTE_PENALTY_MIN = int(os.getenv("COMMUTE_PENALTY_MIN", "75") or 75)
+except Exception:
+    COMMUTE_PENALTY_MIN = 75
+try:
+    COMMUTE_PENALTY = int(os.getenv("COMMUTE_PENALTY", "5") or 5)
+except Exception:
+    COMMUTE_PENALTY = 5
 AUTO_FIT_ENABLED = str(os.getenv("AUTO_FIT_ENABLED", "false")).lower() in TRUTHY
 MIN_SCORE_APPLY = float(os.getenv("MIN_SCORE_APPLY", "1") or 1)
 
@@ -1086,6 +1138,11 @@ def collect_jobs(
         j.score += _location_boost(j.location, search_locs)
         if ALLOWED_LOCATIONS and allowed_match:
             j.score += ALLOWED_LOCATION_BOOST
+        commute_min = _commute_minutes_for(j, COMMUTE_MINUTES)
+        if commute_min is not None:
+            j.commute_min = commute_min
+            if COMMUTE_PENALTY and commute_min >= COMMUTE_PENALTY_MIN:
+                j.score = max(0, j.score - COMMUTE_PENALTY)
 
         if j.score >= 20:
             j.match = "exact"

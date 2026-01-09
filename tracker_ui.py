@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import unicodedata
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -162,6 +164,23 @@ HTML_PAGE = """<!doctype html>
       border-bottom: 1px solid var(--line);
       vertical-align: middle;
     }
+    th.sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    th.sortable::after {
+      content: "";
+      margin-left: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    th.sortable.active[data-dir="asc"]::after {
+      content: "▲";
+    }
+    th.sortable.active[data-dir="desc"]::after {
+      content: "▼";
+    }
     tbody tr:hover {
       background: #f9fafb;
     }
@@ -179,6 +198,19 @@ HTML_PAGE = """<!doctype html>
     .badge.ok { color: var(--ok); border-color: rgba(5, 150, 105, 0.3); }
     .badge.warn { color: var(--warn); border-color: rgba(180, 83, 9, 0.35); }
     .badge.bad { color: var(--bad); border-color: rgba(185, 28, 28, 0.35); }
+    .commute {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: #f8fafc;
+    }
+    .commute.good { color: var(--ok); border-color: rgba(5, 150, 105, 0.3); }
+    .commute.mid { color: #0f766e; border-color: rgba(15, 118, 110, 0.3); }
+    .commute.warn { color: var(--warn); border-color: rgba(180, 83, 9, 0.35); }
+    .commute.bad { color: var(--bad); border-color: rgba(185, 28, 28, 0.35); }
     .link {
       color: var(--accent);
       text-decoration: none;
@@ -233,15 +265,6 @@ HTML_PAGE = """<!doctype html>
         <input type="checkbox" id="showClosed">
         Show closed
       </label>
-      <label class="toggle">
-        Sort:
-        <select id="sort">
-          <option value="last_seen_desc">Last seen</option>
-          <option value="score_desc">Score</option>
-          <option value="company_asc">Company</option>
-          <option value="status_asc">Status</option>
-        </select>
-      </label>
       <input type="text" id="search" placeholder="Suche nach Titel, Firma, Ort">
       <span class="muted" id="lastUpdated"></span>
     </div>
@@ -250,16 +273,16 @@ HTML_PAGE = """<!doctype html>
         <thead>
           <tr>
             <th>Erledigt</th>
-            <th>Titel</th>
-            <th>Firma</th>
-            <th>Ort</th>
-            <th>Status</th>
-            <th>Score</th>
-            <th>Match</th>
-            <th>Quelle</th>
-            <th>Erst gesehen</th>
-            <th>Zuletzt gesehen</th>
-            <th>UID</th>
+            <th class="sortable" data-sort="title">Titel</th>
+            <th class="sortable" data-sort="company">Firma</th>
+            <th class="sortable" data-sort="commute">Ort</th>
+            <th class="sortable" data-sort="status">Status</th>
+            <th class="sortable" data-sort="score">Score</th>
+            <th class="sortable" data-sort="match">Match</th>
+            <th class="sortable" data-sort="source">Quelle</th>
+            <th class="sortable" data-sort="first_seen">Erst gesehen</th>
+            <th class="sortable" data-sort="last_seen">Zuletzt gesehen</th>
+            <th class="sortable" data-sort="uid">UID</th>
             <th>Bewerbung</th>
             <th>Aktion</th>
           </tr>
@@ -274,7 +297,8 @@ HTML_PAGE = """<!doctype html>
       includeDone: false,
       includeClosed: false,
       query: "",
-      sort: "last_seen_desc",
+      sortKey: "last_seen",
+      sortDir: "desc",
     };
     let lastPayload = null;
 
@@ -282,6 +306,7 @@ HTML_PAGE = """<!doctype html>
     const emptyEl = document.getElementById("empty");
     const statsEl = document.getElementById("stats");
     const lastUpdatedEl = document.getElementById("lastUpdated");
+    const headerEls = document.querySelectorAll("th.sortable");
 
     function statusBadge(status) {
       const span = document.createElement("span");
@@ -301,6 +326,14 @@ HTML_PAGE = """<!doctype html>
       }
       span.textContent = label;
       return span;
+    }
+
+    function commuteClass(mins) {
+      if (mins <= 30) return "good";
+      if (mins <= 45) return "mid";
+      if (mins <= 60) return "warn";
+      if (mins <= 75) return "warn";
+      return "bad";
     }
 
     function renderStats(counts) {
@@ -341,7 +374,6 @@ HTML_PAGE = """<!doctype html>
 
     function sortJobs(jobs) {
       const sorted = [...jobs];
-      const key = state.sort;
       const statusRank = {
         "new": 0,
         "notified": 1,
@@ -349,25 +381,54 @@ HTML_PAGE = """<!doctype html>
         "ignored": 3,
         "closed": 4,
       };
+      const matchRank = {
+        "exact": 0,
+        "good": 1,
+        "weak": 2,
+        "unknown": 3,
+      };
       function ts(value) {
         const d = new Date(value || "");
         return Number.isNaN(d.getTime()) ? 0 : d.getTime();
       }
-      function score(value) {
+      function num(value, fallback = 0) {
         const s = parseFloat(value);
-        return Number.isNaN(s) ? 0 : s;
+        return Number.isNaN(s) ? fallback : s;
       }
+      function getValue(job) {
+        switch (state.sortKey) {
+          case "title":
+            return (job.title || "").toLowerCase();
+          case "company":
+            return (job.company || "").toLowerCase();
+          case "commute":
+            return num(job.commute_min, 9999);
+          case "status":
+            return statusRank[job.status] ?? 99;
+          case "score":
+            return num(job.score, 0);
+          case "match":
+            return matchRank[(job.match || "").toLowerCase()] ?? 99;
+          case "source":
+            return (job.source || "").toLowerCase();
+          case "first_seen":
+            return ts(job.first_seen_at);
+          case "last_seen":
+            return ts(job.last_seen_at);
+          case "uid":
+            return (job.job_uid || "").toLowerCase();
+          default:
+            return ts(job.last_seen_at);
+        }
+      }
+      const dir = state.sortDir === "asc" ? 1 : -1;
       sorted.sort((a, b) => {
-        if (key === "score_desc") {
-          return score(b.score) - score(a.score);
+        const av = getValue(a);
+        const bv = getValue(b);
+        if (typeof av === "string" || typeof bv === "string") {
+          return String(av).localeCompare(String(bv)) * dir;
         }
-        if (key === "company_asc") {
-          return (a.company || "").localeCompare(b.company || "");
-        }
-        if (key === "status_asc") {
-          return (statusRank[a.status] ?? 99) - (statusRank[b.status] ?? 99);
-        }
-        return ts(b.last_seen_at) - ts(a.last_seen_at);
+        return (av - bv) * dir;
       });
       return sorted;
     }
@@ -429,7 +490,15 @@ HTML_PAGE = """<!doctype html>
         tr.appendChild(companyTd);
 
         const locationTd = document.createElement("td");
-        locationTd.textContent = job.location || "";
+        const commute = Number(job.commute_min);
+        if (!Number.isNaN(commute) && commute > 0) {
+          const badge = document.createElement("span");
+          badge.className = "commute " + commuteClass(commute);
+          badge.textContent = `${job.location || ""} (${commute}m)`;
+          locationTd.appendChild(badge);
+        } else {
+          locationTd.textContent = job.location || "";
+        }
         tr.appendChild(locationTd);
 
         const statusTd = document.createElement("td");
@@ -502,7 +571,50 @@ HTML_PAGE = """<!doctype html>
       lastUpdatedEl.textContent = payload.generated_at
         ? "Updated: " + fmt(payload.generated_at)
         : "";
+      updateSortHeaders();
     }
+
+    const defaultSortDir = {
+      title: "asc",
+      company: "asc",
+      commute: "asc",
+      status: "asc",
+      score: "desc",
+      match: "asc",
+      source: "asc",
+      first_seen: "desc",
+      last_seen: "desc",
+      uid: "asc",
+    };
+
+    function updateSortHeaders() {
+      headerEls.forEach((th) => {
+        const key = th.dataset.sort;
+        if (key === state.sortKey) {
+          th.classList.add("active");
+          th.setAttribute("data-dir", state.sortDir);
+        } else {
+          th.classList.remove("active");
+          th.removeAttribute("data-dir");
+        }
+      });
+    }
+
+    headerEls.forEach((th) => {
+      th.addEventListener("click", () => {
+        const key = th.dataset.sort;
+        if (!key) return;
+        if (state.sortKey === key) {
+          state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+        } else {
+          state.sortKey = key;
+          state.sortDir = defaultSortDir[key] || "asc";
+        }
+        if (lastPayload) {
+          render(lastPayload);
+        }
+      });
+    });
 
     document.getElementById("refresh").addEventListener("click", loadJobs);
     document.getElementById("sync").addEventListener("click", async () => {
@@ -516,12 +628,6 @@ HTML_PAGE = """<!doctype html>
     document.getElementById("showClosed").addEventListener("change", (ev) => {
       state.includeClosed = ev.target.checked;
       loadJobs();
-    });
-    document.getElementById("sort").addEventListener("change", (ev) => {
-      state.sort = ev.target.value;
-      if (lastPayload) {
-        render(lastPayload);
-      }
     });
     document.getElementById("search").addEventListener("input", (ev) => {
       state.query = ev.target.value.trim().toLowerCase();
@@ -542,6 +648,73 @@ def _status_for_open(record: Dict[str, Any]) -> str:
 
 
 UI_HISTORY_DAYS = int(os.getenv("TRACKER_UI_DAYS", "60") or 60)
+
+
+def _normalize_text(value: str) -> str:
+    text = (value or "").lower()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _parse_commute_map(raw: str) -> list[tuple[str, int]]:
+    if not raw:
+        return []
+    items: list[tuple[str, int]] = []
+    for chunk in raw.split(","):
+        part = chunk.strip()
+        if not part:
+            continue
+        if ":" in part:
+            name, minutes_raw = part.split(":", 1)
+        elif "=" in part:
+            name, minutes_raw = part.split("=", 1)
+        else:
+            continue
+        key = _normalize_text(name)
+        if not key:
+            continue
+        nums = [int(x) for x in re.findall(r"\d+", minutes_raw)]
+        if not nums:
+            continue
+        minutes = max(nums)
+        items.append((key, minutes))
+    items.sort(key=lambda item: len(item[0]), reverse=True)
+    return items
+
+
+COMMUTE_MINUTES = _parse_commute_map(os.getenv("COMMUTE_MINUTES", "") or "")
+
+
+def _commute_minutes_from_text(value: str) -> int | None:
+    if not value or not COMMUTE_MINUTES:
+        return None
+    normalized = _normalize_text(value)
+    for key, minutes in COMMUTE_MINUTES:
+        if key and key in normalized:
+            return minutes
+    return None
+
+
+def _commute_minutes_for_record(record: Dict[str, Any]) -> int | None:
+    raw = record.get("commute_min")
+    if raw not in (None, ""):
+        try:
+            return int(raw)
+        except Exception:
+            pass
+    candidates = [
+        record.get("location") or "",
+        record.get("title") or "",
+        record.get("company") or "",
+    ]
+    for text in candidates:
+        minutes = _commute_minutes_from_text(text)
+        if minutes is not None:
+            return minutes
+    return None
 
 
 def _safe_doc_path(path_value: str) -> Path | None:
@@ -613,6 +786,7 @@ def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
             counts["open"] += 1
 
         doc_path = _pick_application_doc(record)
+        commute_min = _commute_minutes_for_record(record)
 
         items.append(
             {
@@ -628,6 +802,7 @@ def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
                 "first_seen_at": record.get("first_seen_at") or "",
                 "last_seen_at": record.get("last_seen_at") or "",
                 "has_application_doc": bool(doc_path),
+                "commute_min": commute_min,
             }
         )
 

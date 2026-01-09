@@ -103,6 +103,9 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
 - `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow
 - `HARD_ALLOWED_LOCATIONS=Zuerich Oerlikon,...` - harter Orts-Allow unabhaengig vom Strict-Filter
+- `COMMUTE_MINUTES=Zuerich Oerlikon:17,...` - OeV-Minuten je Ort (fuer UI-Farbmarkierung + Score-Penalty)
+- `COMMUTE_PENALTY_MIN=75` - ab dieser Wegzeit Score-Abzug
+- `COMMUTE_PENALTY=5` - Score-Abzugspunkte
 - `AUTO_FIT_ENABLED=true`, `MIN_SCORE_APPLY=0.6` - fit="OK" bei match in {exact,good} und Score >= MIN_SCORE_APPLY
 - `REMINDER_DAYS=2` - Tage zwischen Erinnerungen fuer offene Jobs
 - `REMINDER_DAILY=false` - true = taegliche Erinnerungen

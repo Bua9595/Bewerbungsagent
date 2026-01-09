@@ -370,6 +370,7 @@ def cmd_mail_list(args=None):
                 "score": r.get("score", ""),
                 "match": r.get("match", ""),
                 "date": r.get("date", ""),
+                "commute_min": r.get("commute_min"),
                 "missing_runs": 0,
             }
             state[job_uid] = record
@@ -393,6 +394,8 @@ def cmd_mail_list(args=None):
             record["match"] = r.get("match")
         if r.get("date"):
             record["date"] = r.get("date")
+        if r.get("commute_min") is not None:
+            record["commute_min"] = r.get("commute_min")
         record["last_seen_at"] = stamp
         record["missing_runs"] = 0
 

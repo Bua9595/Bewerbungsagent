@@ -142,6 +142,7 @@ def _empty_state_record(now: str) -> Dict[str, Any]:
         "status": STATUS_NOTIFIED,
         "score": "",
         "match": "",
+        "commute_min": None,
         "missing_runs": 0,
     }
 
