@@ -688,6 +688,7 @@ def cmd_archive_sent(args):
     dest = dest_dir / src.name
     shutil.copy2(src, dest)
     print(f"Kopie erstellt: {dest}")
+    return dest
 
 
 def cmd_verify(_args=None):
@@ -943,6 +944,13 @@ def _find_application_doc(out_dir: Path, company: str, job_title: str) -> Path:
     return candidates[0]
 
 
+def _relpath_if_possible(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(Path.cwd().resolve()))
+    except Exception:
+        return str(path)
+
+
 def cmd_send_applications(args):
     """
     Versendet vorbereitete Bewerbungen per E-Mail.
@@ -1045,9 +1053,62 @@ Florian Bujupi
         if success:
             sent_count += 1
             # Archive
-            cmd_archive_sent(
+            archive_dest = cmd_archive_sent(
                 argparse.Namespace(file=str(docx_path), company=company, dest="")
             )
+            try:
+                from job_state import (
+                    STATUS_APPLIED,
+                    build_job_uid,
+                    canonicalize_url,
+                    load_state,
+                    now_iso,
+                    save_state,
+                )
+
+                stamp = now_iso()
+                state = load_state()
+                job_uid, canonical = build_job_uid(job)
+                record = state.get(job_uid, {})
+                link = job.get("url") or job.get("link") or ""
+                record.update(
+                    {
+                        "job_uid": job_uid,
+                        "source": job.get("source") or record.get("source") or "",
+                        "canonical_url": canonical
+                        or record.get("canonical_url")
+                        or canonicalize_url(link)
+                        or link,
+                        "link": link or record.get("link") or "",
+                        "title": job.get("title") or record.get("title") or "",
+                        "company": job.get("company") or record.get("company") or "",
+                        "location": job.get("location") or record.get("location") or "",
+                        "first_seen_at": record.get("first_seen_at") or stamp,
+                        "last_seen_at": stamp,
+                        "last_sent_at": stamp,
+                        "status": STATUS_APPLIED,
+                        "application_doc": _relpath_if_possible(docx_path),
+                        "application_doc_archived": _relpath_if_possible(archive_dest)
+                        if archive_dest
+                        else "",
+                        "application_sent_at": stamp,
+                    }
+                )
+                state[job_uid] = record
+                save_state(state)
+                try:
+                    from job_tracker import (
+                        get_tracker_path,
+                        load_tracker,
+                        write_tracker,
+                    )
+
+                    tracker_rows = load_tracker(get_tracker_path())
+                    write_tracker(state, get_tracker_path(), tracker_rows)
+                except Exception:
+                    pass
+            except Exception:
+                pass
             # Tracker Update
             with open(tracker_path, "a", encoding="utf-8") as f:
                 today = datetime.now().strftime("%d.%m.%Y")

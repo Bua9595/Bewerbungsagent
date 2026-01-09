@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, List
@@ -20,6 +21,13 @@ from job_state import (
     save_state,
 )
 from job_tracker import get_tracker_path, load_tracker, write_tracker
+
+ROOT_DIR = Path.cwd().resolve()
+ALLOWED_DOC_DIRS = [
+    ROOT_DIR / "out",
+    ROOT_DIR / "04_Versendete_Bewerbungen",
+]
+ALLOWED_DOC_SUFFIXES = {".docx", ".pdf"}
 
 HTML_PAGE = """<!doctype html>
 <html lang="de">
@@ -251,6 +259,7 @@ HTML_PAGE = """<!doctype html>
             <th>Erst gesehen</th>
             <th>Zuletzt gesehen</th>
             <th>UID</th>
+            <th>Bewerbung</th>
             <th>Aktion</th>
           </tr>
         </thead>
@@ -451,6 +460,20 @@ HTML_PAGE = """<!doctype html>
         uidTd.title = job.job_uid || "";
         tr.appendChild(uidTd);
 
+        const docTd = document.createElement("td");
+        if (job.has_application_doc) {
+          const docLink = document.createElement("a");
+          docLink.className = "link";
+          docLink.href = `/api/doc?job_uid=${encodeURIComponent(job.job_uid)}`;
+          docLink.target = "_blank";
+          docLink.rel = "noreferrer";
+          docLink.textContent = "Download";
+          docTd.appendChild(docLink);
+        } else {
+          docTd.textContent = "-";
+        }
+        tr.appendChild(docTd);
+
         const actionTd = document.createElement("td");
         if (job.status === "new" || job.status === "notified") {
           const ignoreBtn = document.createElement("button");
@@ -520,6 +543,38 @@ def _status_for_open(record: Dict[str, Any]) -> str:
 UI_HISTORY_DAYS = int(os.getenv("TRACKER_UI_DAYS", "60") or 60)
 
 
+def _safe_doc_path(path_value: str) -> Path | None:
+    if not path_value:
+        return None
+    raw = Path(path_value)
+    try:
+        resolved = raw if raw.is_absolute() else (ROOT_DIR / raw)
+        resolved = resolved.resolve()
+    except Exception:
+        return None
+    if resolved.suffix.lower() not in ALLOWED_DOC_SUFFIXES:
+        return None
+    for base in ALLOWED_DOC_DIRS:
+        try:
+            resolved.relative_to(base.resolve())
+            return resolved
+        except Exception:
+            continue
+    return None
+
+
+def _pick_application_doc(record: Dict[str, Any]) -> Path | None:
+    candidates = [
+        record.get("application_doc_archived"),
+        record.get("application_doc"),
+    ]
+    for value in candidates:
+        path = _safe_doc_path(str(value)) if value else None
+        if path and path.exists():
+            return path
+    return None
+
+
 def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
     state = load_state()
     items: List[Dict[str, Any]] = []
@@ -556,6 +611,8 @@ def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
         else:
             counts["open"] += 1
 
+        doc_path = _pick_application_doc(record)
+
         items.append(
             {
                 "job_uid": uid,
@@ -569,6 +626,7 @@ def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
                 "match": record.get("match") or "",
                 "first_seen_at": record.get("first_seen_at") or "",
                 "last_seen_at": record.get("last_seen_at") or "",
+                "has_application_doc": bool(doc_path),
             }
         )
 
@@ -593,6 +651,26 @@ class TrackerHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _send_file(self, path: Path) -> None:
+        suffix = path.suffix.lower()
+        if suffix == ".pdf":
+            content_type = "application/pdf"
+        elif suffix == ".docx":
+            content_type = (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+        else:
+            content_type = "application/octet-stream"
+        data = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header(
+            "Content-Disposition", f'attachment; filename="{path.name}"'
+        )
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _send_html(self, html: str) -> None:
         payload = html.encode("utf-8")
         self.send_response(200)
@@ -615,6 +693,25 @@ class TrackerHandler(BaseHTTPRequestHandler):
                 include_closed=include_closed,
             )
             self._send_json(payload)
+            return
+        if parsed.path == "/api/doc":
+            params = parse_qs(parsed.query)
+            job_uid = (params.get("job_uid", [""])[0] or "").strip()
+            if not job_uid:
+                self._send_json({"ok": False, "error": "missing job_uid"}, 400)
+                return
+            state = load_state()
+            record = state.get(job_uid)
+            if not record:
+                self._send_json({"ok": False, "error": "unknown job_uid"}, 404)
+                return
+            doc_path = _pick_application_doc(record)
+            if not doc_path:
+                self._send_json(
+                    {"ok": False, "error": "doc not found"}, 404
+                )
+                return
+            self._send_file(doc_path)
             return
         self.send_error(404)
 

@@ -52,6 +52,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
   - `mail-list` liest den Tracker automatisch ein; alternativ `python tasks.py tracker-sync`.
   - Klickbar im Browser via `python tasks.py tracker-ui` (setzt Status in `job_state.json`, Sortierung/Filter in der UI).
   - Tracker-UI zeigt erledigt/closed standardmaessig nur aus den letzten `TRACKER_UI_DAYS` Tagen.
+  - Nach `send-applications` steht das Anschreiben in der UI als Download zur Verfuegung.
   - Job-UID wird in der Mail angezeigt (fuer mark-applied/mark-ignored).
   - Erinnerungen fuer offene Jobs nach `REMINDER_DAYS` (oder taeglich via `REMINDER_DAILY=true`).
   - Jobs werden als closed markiert, wenn sie `CLOSE_MISSING_RUNS` Laeufe fehlen oder seit `CLOSE_NOT_SEEN_DAYS` Tagen nicht gesehen wurden.
