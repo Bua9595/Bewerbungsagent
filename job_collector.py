@@ -24,6 +24,16 @@ from webdriver_manager.chrome import ChromeDriverManager
 from config import config
 from logger import job_logger
 from job_adapters_ch import JobsChAdapter, JobupAdapter, JobRow as CHJobRow
+from job_adapters_extra import (
+    CareerjetAdapter,
+    JoobleAdapter,
+    JoraAdapter,
+    JobrapidoAdapter,
+    JobScout24Adapter,
+    JobWinnerAdapter,
+    MonsterAdapter,
+    ExtraJobRow,
+)
 from job_query_builder import build_search_urls
 
 
@@ -968,7 +978,17 @@ def collect_jobs(
             except Exception as e:
                 job_logger.warning(f"Indeed Adapter Fehler: {e}")
 
-        adapters = [JobsChAdapter(), JobupAdapter()]
+        adapters = [
+            JobsChAdapter(),
+            JobupAdapter(),
+            JobScout24Adapter(),
+            JobWinnerAdapter(),
+            CareerjetAdapter(),
+            JobrapidoAdapter(),
+            MonsterAdapter(),
+            JoraAdapter(),
+            JoobleAdapter(),
+        ]
         for adapter in adapters:
             if ENABLED_SOURCES and adapter.source.lower() not in ENABLED_SOURCES:
                 continue
@@ -987,20 +1007,23 @@ def collect_jobs(
 
                         converted = 0
                         for r in rows:
-                            if not isinstance(r, CHJobRow):
-                                continue
+                            if not isinstance(r, (CHJobRow, ExtraJobRow)):
+                                if not getattr(r, "title", None) or not getattr(
+                                    r, "link", None
+                                ):
+                                    continue
                             score, label = _score_title(r.title)
                             all_jobs.append(
                                 Job(
                                     raw_title=getattr(r, "raw_title", "") or r.title,
                                     title=r.title,
-                                    company=r.company,
-                                    location=r.location,
+                                    company=getattr(r, "company", ""),
+                                    location=getattr(r, "location", ""),
                                     link=r.link,
                                     source=adapter.source,
                                     score=score,
                                     match=label,
-                                    date=r.date or "",
+                                    date=getattr(r, "date", "") or "",
                                 )
                             )
                             converted += 1

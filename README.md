@@ -99,7 +99,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `BLACKLIST_COMPANIES=` - Komma-Liste ignorierter Firmen
 - `BLACKLIST_KEYWORDS=junior` - Titel-Keywords zum Ausschluss
 - `INCLUDE_KEYWORDS=it,helpdesk,service desk,...` - Optionaler Include-Filter (erzwingt IT-bezogene Treffer)
-- `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch` - Komma-Liste; leer = alle aktiv
+- `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch,jobscout24,jobwinner,careerjet,jobrapido,monster,jora,jooble` - Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
 - `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow
 - `HARD_ALLOWED_LOCATIONS=Zuerich Oerlikon,...` - harter Orts-Allow unabhaengig vom Strict-Filter
