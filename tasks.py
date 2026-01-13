@@ -11,6 +11,8 @@ Beispiele:
   python tasks.py list
   python tasks.py mail-list
   python tasks.py mail-list --dry-run
+  python tasks.py mail-open
+  python tasks.py mail-open --dry-run
   python tasks.py tracker-sync
   python tasks.py tracker-ui
   python tasks.py mark-applied <job_uid>
@@ -426,6 +428,7 @@ def cmd_mail_list(args=None):
 
     new_jobs = []
     reminder_jobs = []
+    open_jobs = []
     new_uids = set()
 
     for uid in seen_this_run:
@@ -456,8 +459,18 @@ def cmd_mail_list(args=None):
             if uid not in new_uids:
                 reminder_jobs.append(record)
 
+    for uid in seen_this_run:
+        record = state.get(uid)
+        if not record:
+            continue
+        if record.get("status") in TERMINAL_STATUSES:
+            continue
+        if record.get("status") in OPEN_STATUSES:
+            open_jobs.append(record)
+
     new_jobs.sort(key=lambda r: _score_val(r.get("score")), reverse=True)
     reminder_jobs.sort(key=lambda r: _score_val(r.get("score")), reverse=True)
+    open_jobs.sort(key=lambda r: _score_val(r.get("score")), reverse=True)
 
     active_seen_this_run = sum(
         1
@@ -475,31 +488,47 @@ def cmd_mail_list(args=None):
     mailed_reminder_count = 0
     mail_sent = False
 
-    if new_jobs or reminder_jobs:
+    send_open = bool(args and getattr(args, "send_open", False))
+    send_jobs = open_jobs if send_open else new_jobs
+    send_reminders = [] if send_open else reminder_jobs
+
+    if send_jobs or send_reminders:
         if args and getattr(args, "dry_run", False):
-            mailed_new_count = len(new_jobs)
-            mailed_reminder_count = len(reminder_jobs)
-            print(
-                f"[DRY RUN] Mail waere gesendet worden "
-                f"({mailed_new_count} neu, {mailed_reminder_count} Reminder)."
-            )
+            mailed_new_count = len(send_jobs)
+            mailed_reminder_count = len(send_reminders)
+            if send_open:
+                print(
+                    f"[DRY RUN] Mail waere gesendet worden "
+                    f"({mailed_new_count} offene Jobs)."
+                )
+            else:
+                print(
+                    f"[DRY RUN] Mail waere gesendet worden "
+                    f"({mailed_new_count} neu, {mailed_reminder_count} Reminder)."
+                )
         else:
-            ok = email_automation.send_job_alert(new_jobs, reminder_jobs)
+            ok = email_automation.send_job_alert(send_jobs, send_reminders)
             if ok:
                 mail_sent = True
-                mailed_new_count = len(new_jobs)
-                mailed_reminder_count = len(reminder_jobs)
-                for record in new_jobs + reminder_jobs:
+                mailed_new_count = len(send_jobs)
+                mailed_reminder_count = len(send_reminders)
+                for record in send_jobs + send_reminders:
                     record["status"] = STATUS_NOTIFIED
                     record["last_sent_at"] = stamp
-                print(
-                    f"E-Mail gesendet ({mailed_new_count} neu, "
-                    f"{mailed_reminder_count} Reminder)"
-                )
+                if send_open:
+                    print(f"E-Mail gesendet ({mailed_new_count} offene Jobs)")
+                else:
+                    print(
+                        f"E-Mail gesendet ({mailed_new_count} neu, "
+                        f"{mailed_reminder_count} Reminder)"
+                    )
             else:
                 print("Mail/WhatsApp uebersprungen (disabled oder Fehler).")
     else:
-        print("Keine neuen oder offenen Jobs zum Senden.")
+        if send_open:
+            print("Keine offenen Jobs zum Senden.")
+        else:
+            print("Keine neuen oder offenen Jobs zum Senden.")
 
     save_state(state)
 
@@ -1305,6 +1334,17 @@ def main(argv=None):
     mail.add_argument(
         "--dry-run", action="store_true", help="Nur simulieren, keine Mails senden"
     )
+    mail.add_argument(
+        "--send-open",
+        action="store_true",
+        help="Statt nur neue Jobs: alle offenen, aktuell gefundenen Jobs senden",
+    )
+
+    mail_open = sub.add_parser("mail-open")
+    mail_open.add_argument(
+        "--dry-run", action="store_true", help="Nur simulieren, keine Mails senden"
+    )
+    mail_open.set_defaults(send_open=True)
 
     sub.add_parser("tracker-sync")
     tracker_ui = sub.add_parser("tracker-ui")
@@ -1379,6 +1419,8 @@ def main(argv=None):
     elif args.cmd == "list":
         cmd_list(args)
     elif args.cmd == "mail-list":
+        cmd_mail_list(args)
+    elif args.cmd == "mail-open":
         cmd_mail_list(args)
     elif args.cmd == "tracker-sync":
         cmd_tracker_sync(args)

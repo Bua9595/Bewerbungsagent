@@ -30,6 +30,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `python tasks.py env-check` – zeigt SMTP/Empfänger/Profil
 - `python tasks.py verify` – Config/compileall/Verzeichnis-Check
 - `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`, mit `--dry-run` nur simulieren)
+- `python tasks.py mail-open` - sammelt Jobs und mailt alle offenen Jobs, die in diesem Lauf gefunden wurden (auch bereits benachrichtigte)
 - `python tasks.py tracker-sync` - synchronisiert Markierungen aus `generated/job_tracker.xlsx` in den Status
 - `python tasks.py tracker-ui` - lokale Klick-UI fuer applied/ignored/open (http://127.0.0.1:8765)
 - `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)

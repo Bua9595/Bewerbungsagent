@@ -50,6 +50,12 @@ python tasks.py mail-list
 *Run-Lock: `RUN_LOCK_FILE` + `RUN_LOCK_TTL_MIN` verhindern parallele Laeufe.*
 *Empfehlung: Täglich morgens (z.B. 09:00).*
 
+### Offene Jobs erneut senden (optional)
+Sammelt Jobs und mailt alle offenen Jobs, die in diesem Lauf gefunden wurden.
+```bash
+python tasks.py mail-open
+```
+
 ### Interaktive Tracker-UI (optional)
 Lokale Klick-UI fuer applied/ignored/open:
 ```bash
