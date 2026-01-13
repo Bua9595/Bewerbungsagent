@@ -34,6 +34,10 @@ Die folgenden Variablen sind für den produktiven Betrieb **zwingend**:
 | `AUTO_FIT_ENABLED` | Auto-Matching aktivieren | `true` (empfohlen für Auto-Apply) |
 | `MIN_SCORE_APPLY` | Min. Score für Bewerbung | `1` (1-10 Skala) |
 
+Optional (Detail-Scan):
+- `DETAILS_BLOCKLIST_SCAN=true` scannt Detailseiten nach blockierten Begriffen.
+- `DETAILS_BLOCKLIST_SKIP_DOMAINS=jobrapido.com,...` ueberspringt Detail-Scan fuer blockende Domains.
+
 ## 3. Routine-Betrieb (Cron / Agent Tasks)
 
 ### Tägliche Job-Suche & Reporting

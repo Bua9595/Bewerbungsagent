@@ -378,6 +378,11 @@ DETAILS_BLOCKLIST_MAX_JOBS = int(
 DETAILS_BLOCKLIST_TIMEOUT = float(
     os.getenv("DETAILS_BLOCKLIST_TIMEOUT", "12") or 12
 )
+DETAILS_BLOCKLIST_SKIP_DOMAINS = {
+    x.strip().lower()
+    for x in (os.getenv("DETAILS_BLOCKLIST_SKIP_DOMAINS", "") or "").split(",")
+    if x.strip()
+}
 DETAILS_CONTACT_SCAN = str(
     os.getenv("DETAILS_CONTACT_SCAN", "false")
 ).lower() in TRUTHY
@@ -794,6 +799,9 @@ def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
         return False
     if url in DETAILS_BLOCKLIST_CACHE:
         return DETAILS_BLOCKLIST_CACHE[url]
+    if _is_skipped_detail_domain(url):
+        DETAILS_BLOCKLIST_CACHE[url] = False
+        return False
     try:
         resp = requests.get(
             url,
@@ -814,6 +822,21 @@ def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
         job_logger.warning(f"Detail-Scan Fehler ({url}): {e}")
         DETAILS_BLOCKLIST_CACHE[url] = False
         return False
+
+
+def _is_skipped_detail_domain(url: str) -> bool:
+    if not url or not DETAILS_BLOCKLIST_SKIP_DOMAINS:
+        return False
+    try:
+        host = urlparse(url).netloc.lower()
+    except Exception:
+        return False
+    if host.startswith("www."):
+        host = host[4:]
+    for domain in DETAILS_BLOCKLIST_SKIP_DOMAINS:
+        if host == domain or host.endswith("." + domain):
+            return True
+    return False
 
 
 def _is_local(job: Job, search_locations: List[str]) -> bool:
@@ -1151,10 +1174,13 @@ def collect_jobs(
             and j.link
             and detail_scans < DETAILS_BLOCKLIST_MAX_JOBS
         ):
-            if j.link not in DETAILS_BLOCKLIST_CACHE:
-                detail_scans += 1
-            if _detail_page_has_blocked_terms(j.link, BLOCKLIST_TERMS):
-                continue
+            if _is_skipped_detail_domain(j.link):
+                DETAILS_BLOCKLIST_CACHE[j.link] = False
+            else:
+                if j.link not in DETAILS_BLOCKLIST_CACHE:
+                    detail_scans += 1
+                if _detail_page_has_blocked_terms(j.link, BLOCKLIST_TERMS):
+                    continue
         seen.add(key)
 
         if (

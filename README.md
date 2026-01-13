@@ -119,6 +119,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `REQUIREMENTS_BLOCKLIST=fuehrerschein,kat b,...` - filtert Führerschein/Auto-Pflicht
 - ÖV-Zeitfilter: `TRANSIT_ENABLED`, `TRANSIT_ORIGIN`, `TRANSIT_MAX_MINUTES`, `TRANSIT_TIME`, `TRANSIT_DATE`
 - Optional: `DETAILS_BLOCKLIST_SCAN=true` scannt Stellen-Details nach blockierten Begriffen
+- Optional: `DETAILS_BLOCKLIST_SKIP_DOMAINS=jobrapido.com,...` ueberspringt Detail-Scan fuer Domains, die blocken
 - Optional: `EXPAND_QUERY_VARIANTS`, `QUERY_VARIANTS_LIMIT`, `MAX_QUERY_TERMS`, `EXTRA_QUERY_TERMS` für breitere Suche
 - Company-Career-Scan (optional): `COMPANY_CAREERS_ENABLED`, `COMPANY_CAREER_URLS`, `COMPANY_CAREER_NAMES`, `CAREER_LINK_KEYWORDS`, `CAREER_MAX_LINKS`, `CAREER_MIN_SCORE`
 
