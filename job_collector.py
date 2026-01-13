@@ -582,7 +582,19 @@ def _has_required_keywords(job: Job, required: set[str]) -> bool:
         [job.title or "", job.raw_title or "", job.company or "", job.location or ""]
     )
     normalized = _normalize_text(blob)
-    return any(term in normalized for term in required)
+    if not normalized:
+        return False
+    tokens = set(normalized.split())
+    for term in required:
+        if not term:
+            continue
+        if len(term) <= 2:
+            if term in tokens:
+                return True
+        else:
+            if term in normalized:
+                return True
+    return False
 
 
 _DURATION_RE = re.compile(r"(?:(\d+)d)?(\d{1,2}):(\d{2}):(\d{2})")

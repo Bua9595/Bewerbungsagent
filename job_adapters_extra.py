@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Iterable, List
-from urllib.parse import quote_plus, urljoin
+from urllib.parse import quote_plus, urljoin, urlsplit, urlunsplit, parse_qsl, urlencode
 
 import requests
 
@@ -24,7 +24,58 @@ class ExtraJobRow:
 DEFAULT_HEADERS = {
     "User-Agent": "Bewerbungsagent/1.0 (+adapter)",
     "Accept-Language": "de-CH,de;q=0.9,en;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
+
+_TRACKING_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "utm_campaign",
+    "utm_content",
+    "utm_medium",
+    "utm_source",
+    "utm_term",
+    "yclid",
+}
+
+
+def _normalize_link(link: str) -> str:
+    if not link:
+        return ""
+    try:
+        parts = urlsplit(link)
+        query_pairs = [
+            (k, v)
+            for k, v in parse_qsl(parts.query, keep_blank_values=True)
+            if k and k.lower() not in _TRACKING_QUERY_KEYS
+        ]
+        clean_query = urlencode(query_pairs, doseq=True) if query_pairs else ""
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, clean_query, ""))
+    except Exception:
+        return link.strip()
+
+
+def _is_detail_link(link: str) -> bool:
+    if not link:
+        return False
+    u = link.lower()
+    try:
+        path = urlsplit(u).path
+    except Exception:
+        path = u
+    if "/detail/" in path or "/job/" in path or "/jobad/" in path or "/stellenangebot" in path:
+        return True
+    if "/jobs/" in path and re.search(r"/jobs/[^/]+", path):
+        return True
+    if "/stellenangebote/" in path and re.search(r"/stellenangebote/[^/]+", path):
+        return True
+    if re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", u):
+        return True
+    if re.search(r"/\d{6,}(/|$)", u):
+        return True
+    return False
 
 
 class _LinkParser(HTMLParser):
@@ -79,23 +130,17 @@ def _parse_jsonld(html: str) -> List[dict]:
         stack = data if isinstance(data, list) else [data]
         while stack:
             obj = stack.pop(0)
-            if isinstance(obj, dict) and "@graph" in obj and isinstance(
-                obj["@graph"], list
-            ):
+            if isinstance(obj, dict) and "@graph" in obj and isinstance(obj["@graph"], list):
                 stack.extend(obj["@graph"])
                 continue
             if isinstance(obj, dict):
                 t = obj.get("@type")
-                if t == "JobPosting" or (
-                    isinstance(t, list) and "JobPosting" in t
-                ):
+                if t == "JobPosting" or (isinstance(t, list) and "JobPosting" in t):
                     out.append(obj)
     return out
 
 
-def _jsonld_to_rows(
-    items: Iterable[dict], source: str, fallback_location: str = ""
-) -> List[ExtraJobRow]:
+def _jsonld_to_rows(items: Iterable[dict], source: str, fallback_location: str = "") -> List[ExtraJobRow]:
     rows: List[ExtraJobRow] = []
     for it in items:
         title = (it.get("title") or it.get("jobTitle") or "").strip()
@@ -114,28 +159,10 @@ def _jsonld_to_rows(
         if isinstance(jl, list) and jl:
             first = jl[0] if isinstance(jl[0], dict) else {}
             addr = first.get("address") or {}
-            loc = ", ".join(
-                filter(
-                    None,
-                    [
-                        addr.get("addressLocality"),
-                        addr.get("addressRegion"),
-                        addr.get("addressCountry"),
-                    ],
-                )
-            )
+            loc = ", ".join(filter(None, [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]))
         elif isinstance(jl, dict):
             addr = jl.get("address") or {}
-            loc = ", ".join(
-                filter(
-                    None,
-                    [
-                        addr.get("addressLocality"),
-                        addr.get("addressRegion"),
-                        addr.get("addressCountry"),
-                    ],
-                )
-            )
+            loc = ", ".join(filter(None, [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]))
         loc = (loc or fallback_location or "").strip()
 
         link = it.get("url")
@@ -144,7 +171,8 @@ def _jsonld_to_rows(
         if not link and isinstance(org, dict):
             link = org.get("sameAs") or ""
         link = (link or "").strip()
-        if not link:
+
+        if not link or not _is_detail_link(link):
             continue
 
         date = (it.get("datePosted") or "").strip()
@@ -173,32 +201,45 @@ def _rows_from_links(
 ) -> List[ExtraJobRow]:
     parser = _LinkParser()
     parser.feed(html)
+
     rows: List[ExtraJobRow] = []
     seen = set()
+
     for href, text in parser.links:
+        text = (text or "").strip()
         if not href or not text or len(text) < 6:
             continue
+
         link = urljoin(base_url, href)
         if domain_hint and domain_hint not in link:
             continue
+
+        # harte Detail-Filterung
+        if not _is_detail_link(link):
+            continue
+
         if link_patterns and not any(p.search(link) for p in link_patterns):
             continue
-        if link in seen:
+
+        key = _normalize_link(link)
+        if key in seen:
             continue
-        seen.add(link)
+        seen.add(key)
+
         rows.append(
             ExtraJobRow(
-                title=text.strip(),
+                title=text,
                 company="",
                 location=fallback_location or "",
                 link=link,
-                raw_title=text.strip(),
+                raw_title=text,
                 date="",
                 source=source,
             )
         )
         if len(rows) >= limit:
             break
+
     return rows
 
 
@@ -211,30 +252,25 @@ class _BaseRequestsAdapter:
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         raise NotImplementedError
 
-    def search(
-        self,
-        _driver,
-        query: str,
-        location: str,
-        radius_km: int = 25,
-        limit: int = 25,
-    ) -> List[ExtraJobRow]:
+    def search(self, _driver, query: str, location: str, radius_km: int = 25, limit: int = 25) -> List[ExtraJobRow]:
         url = self.build_url(query, location, radius_km)
         try:
             html = _fetch_html(url)
         except Exception:
             return []
+
         rows = _jsonld_to_rows(_parse_jsonld(html), self.source, location)
         if rows:
             return rows[:limit]
+
         return _rows_from_links(
-            html,
-            self.source,
-            self.base_url or url,
-            self.domain_hint,
-            self.link_patterns,
-            location,
-            limit,
+            html=html,
+            source=self.source,
+            base_url=self.base_url or url,
+            domain_hint=self.domain_hint,
+            link_patterns=self.link_patterns,
+            fallback_location=location,
+            limit=limit,
         )
 
 
@@ -242,7 +278,7 @@ class JobScout24Adapter(_BaseRequestsAdapter):
     source = "jobscout24"
     base_url = "https://www.jobscout24.ch/de/jobs/"
     domain_hint = "jobscout24.ch"
-    link_patterns = [re.compile(r"/jobs?/")]
+    link_patterns = [re.compile(r"/jobs?/|/de/jobs?/")]
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         q = quote_plus(query)
@@ -265,7 +301,7 @@ class JobWinnerAdapter(_BaseRequestsAdapter):
 class CareerjetAdapter(_BaseRequestsAdapter):
     source = "careerjet"
     base_url = "https://www.careerjet.ch/suchen/stellenangebote"
-    domain_hint = "careerjet"
+    domain_hint = "careerjet.ch"
     link_patterns = [re.compile(r"/jobad/")]
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
@@ -277,7 +313,7 @@ class CareerjetAdapter(_BaseRequestsAdapter):
 class JobrapidoAdapter(_BaseRequestsAdapter):
     source = "jobrapido"
     base_url = "https://ch.jobrapido.com/"
-    domain_hint = "jobrapido"
+    domain_hint = "jobrapido.com"
     link_patterns = [re.compile(r"jobrapido")]
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
@@ -302,7 +338,7 @@ class JoraAdapter(_BaseRequestsAdapter):
     source = "jora"
     base_url = "https://ch.jora.com/j"
     domain_hint = "jora.com"
-    link_patterns = [re.compile(r"/job/|/j\\?")]
+    link_patterns = [re.compile(r"/job/|/j\?")]
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         q = quote_plus(query)
@@ -314,9 +350,9 @@ class JoobleAdapter(_BaseRequestsAdapter):
     source = "jooble"
     base_url = "https://ch.jooble.org/SearchResult"
     domain_hint = "jooble.org"
-    link_patterns = [re.compile(r"/\\d+|/job/|/SearchResult/")]
+    link_patterns = [re.compile(r"/\d+|/job/|/SearchResult/")]
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
-        q = quote_plus(query)
-        loc = quote_plus(location)
+        q = quote_plus((query or "").strip())
+        loc = quote_plus((location or "").strip())
         return f"{self.base_url}?ukw={q}&rgns={loc}"

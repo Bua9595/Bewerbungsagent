@@ -3,7 +3,7 @@
 Automatisiert Jobs sammeln -> filtern -> mailen -> Anschreiben erstellen -> Tracking pflegen. Alle Geheimnisse bleiben in `.env` (nicht im Repo).
 
 ## Finales Ziel, Stand, Roadmap
-- **AG1 Collector**: jobs.ch/jobup/Indeed scrapen, normalisieren, dedupen, scoren, lokal filtern; `data/jobs.json` schreiben; Mail mit allen neuen lokalen Treffern. **Status:** läuft, Mail-Output korrekt, Hardcut auf Orte aktiv.
+- **AG1 Collector**: jobs.ch/jobup/Indeed + Aggregatoren (jobscout24, jobwinner, careerjet, jobrapido, monster, jora, jooble) scrapen, normalisieren, dedupen, scoren, lokal filtern; `data/jobs.json` schreiben; Mail mit allen neuen lokalen Treffern. **Status:** läuft, Mail-Output korrekt, Hardcut auf Orte aktiv.
 - **AG2 Applicant**: `prepare-applications` liest `data/jobs.json` (fit=="OK"), füllt DOCX-Templates, schreibt `out/`, tracked in `bewerbungen_tracking.csv`. **Status:** läuft; Kopie nach `04_Versendete_Bewerbungen/<Firma>/` noch offen.
 - **AG3 QA/Betrieb**: README/Quickstart, env.example, verify, Scheduler (täglich). **Status:** README aktualisiert; env.example/verify/Scheduler noch offen.
 
@@ -31,7 +31,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `python tasks.py verify` – Config/compileall/Verzeichnis-Check
 - `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`, mit `--dry-run` nur simulieren)
 - `python tasks.py tracker-sync` - synchronisiert Markierungen aus `generated/job_tracker.xlsx` in den Status
-- `python tasks.py tracker-ui` - lokale Klick-UI fuer `erledigt`/`ignored` (http://127.0.0.1:8765)
+- `python tasks.py tracker-ui` - lokale Klick-UI fuer applied/ignored/open (http://127.0.0.1:8765)
 - `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)
 - `python tasks.py mark-ignored <job_uid> [--url <link>]` - markiert Job als ignoriert (stoppt Erinnerungen)
 - `python tasks.py list` – sammelt und gibt Textliste + CSV aus
@@ -51,7 +51,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
   - CSV wird weiterhin unterstuetzt (setze `JOB_TRACKER_FILE=generated/job_tracker.csv`).
   - `mail-list` liest den Tracker automatisch ein; alternativ `python tasks.py tracker-sync`.
   - Klickbar im Browser via `python tasks.py tracker-ui` (setzt Status in `job_state.json`, Sortierung/Filter in der UI).
-  - Tracker-UI zeigt erledigt/closed standardmaessig nur aus den letzten `TRACKER_UI_DAYS` Tagen.
+  - Tracker-UI zeigt applied/ignored/closed standardmaessig nur aus den letzten `TRACKER_UI_DAYS` Tagen.
   - Nach `send-applications` steht das Anschreiben in der UI als Download zur Verfuegung.
   - Job-UID wird in der Mail angezeigt (fuer mark-applied/mark-ignored).
   - Erinnerungen fuer offene Jobs nach `REMINDER_DAYS` (oder taeglich via `REMINDER_DAILY=true`).
@@ -113,7 +113,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `CLOSE_NOT_SEEN_DAYS=7` - schliesst Jobs nach N Tagen ohne Treffer
 - `RUN_LOCK_FILE=generated/mail_list.lock` - Run-Lock Datei fuer Agenten/Scheduler
 - `RUN_LOCK_TTL_MIN=120` - stale Lock nach N Minuten
-- `TRACKER_UI_DAYS=60` - Tracker-UI zeigt erledigt/closed nur fuer N Tage
+- `TRACKER_UI_DAYS=60` - Tracker-UI zeigt applied/ignored/closed nur fuer N Tage
 - `STRICT_LOCATION_FILTER=true`, `ALLOWED_LOCATION_BOOST=2` - harter Ortsfilter (mit Soft-Boost)
 - `LANGUAGE_BLOCKLIST=franzosisch,francais,french,...` - filtert Jobs mit Sprach-Anforderungen
 - `REQUIREMENTS_BLOCKLIST=fuehrerschein,kat b,...` - filtert Führerschein/Auto-Pflicht

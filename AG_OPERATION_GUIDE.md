@@ -47,12 +47,12 @@ python tasks.py mail-list
 *Empfehlung: Täglich morgens (z.B. 09:00).*
 
 ### Interaktive Tracker-UI (optional)
-Lokale Klick-UI fuer erledigt/ignored:
+Lokale Klick-UI fuer applied/ignored/open:
 ```bash
 python tasks.py tracker-ui
 ```
 *URL: http://127.0.0.1:8765*
-*Erledigt/closed Anzeige standardmaessig fuer die letzten `TRACKER_UI_DAYS` Tage.*
+*Applied/ignored/closed Anzeige standardmaessig fuer die letzten `TRACKER_UI_DAYS` Tage.*
 
 ### Bewerbungen vorbereiten (Batch)
 Erstellt DOCX-Anschreiben für alle "passenden" Jobs (Status "OK" oder manuell geprüft).

@@ -250,7 +250,7 @@ HTML_PAGE = """<!doctype html>
     <div class="hero">
       <div>
         <h1>Job Tracker</h1>
-        <p>Erledigt anklicken setzt den Status auf "applied".</p>
+        <p>Ignorieren markiert Jobs, die nicht passen.</p>
       </div>
       <div class="stats" id="stats"></div>
     </div>
@@ -272,7 +272,7 @@ HTML_PAGE = """<!doctype html>
       <table>
         <thead>
           <tr>
-            <th>Erledigt</th>
+            <th>Ignorieren</th>
             <th class="sortable" data-sort="title">Titel</th>
             <th class="sortable" data-sort="company">Firma</th>
             <th class="sortable" data-sort="commute">Ort</th>
@@ -462,9 +462,9 @@ HTML_PAGE = """<!doctype html>
         const doneTd = document.createElement("td");
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
-        checkbox.checked = job.status === "applied" || job.status === "ignored";
+        checkbox.checked = job.status === "ignored";
         checkbox.addEventListener("change", async () => {
-          const next = checkbox.checked ? "applied" : "open";
+          const next = checkbox.checked ? "ignored" : "open";
           await api("/api/mark", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -545,7 +545,21 @@ HTML_PAGE = """<!doctype html>
         tr.appendChild(docTd);
 
         const actionTd = document.createElement("td");
-        if (job.status === "new" || job.status === "notified") {
+        if (job.status === "closed") {
+          actionTd.textContent = "-";
+        } else {
+          const appliedBtn = document.createElement("button");
+          appliedBtn.className = "btn ghost";
+          appliedBtn.textContent = "Applied";
+          appliedBtn.addEventListener("click", async () => {
+            await api("/api/mark", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ job_uid: job.job_uid, status: "applied" }),
+            });
+            await loadJobs();
+          });
+
           const ignoreBtn = document.createElement("button");
           ignoreBtn.className = "btn ghost";
           ignoreBtn.textContent = "Ignore";
@@ -557,9 +571,31 @@ HTML_PAGE = """<!doctype html>
             });
             await loadJobs();
           });
-          actionTd.appendChild(ignoreBtn);
-        } else {
-          actionTd.textContent = "-";
+
+          const openBtn = document.createElement("button");
+          openBtn.className = "btn ghost";
+          openBtn.textContent = "Open";
+          openBtn.addEventListener("click", async () => {
+            await api("/api/mark", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ job_uid: job.job_uid, status: "open" }),
+            });
+            await loadJobs();
+          });
+
+          if (job.status === "new" || job.status === "notified") {
+            actionTd.appendChild(appliedBtn);
+            actionTd.appendChild(ignoreBtn);
+          } else if (job.status === "applied") {
+            actionTd.appendChild(ignoreBtn);
+            actionTd.appendChild(openBtn);
+          } else if (job.status === "ignored") {
+            actionTd.appendChild(appliedBtn);
+            actionTd.appendChild(openBtn);
+          } else {
+            actionTd.textContent = "-";
+          }
         }
         tr.appendChild(actionTd);
 

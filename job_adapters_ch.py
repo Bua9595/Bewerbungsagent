@@ -3,6 +3,7 @@ import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import Iterable, Optional, List
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -22,37 +23,64 @@ class JobRow:
     score: int = 0
 
 
-COOKIE_CLICK_JS = """
-document
-  .querySelectorAll('[id*="consent"], [class*="cookie" i]')
-  .forEach(e => {
-    try {
-      (e.querySelector('button[aria-label*="kzept" i]') ||
-       e.querySelector('button'))?.click();
-    } catch (_) {}
-  });
+# robuster Cookie-Clicker (de/en/fr)
+COOKIE_CLICK_JS = r"""
+(() => {
+  const needles = [
+    'akzept', 'zustimm', 'einverstanden',
+    'accept', 'agree', 'consent',
+    'tout accepter', 'accepter', 'j\'accepte'
+  ];
+
+  const isVisible = (el) => {
+    if (!el) return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+
+  const btns = Array.from(document.querySelectorAll('button, [role="button"], input[type="button"], input[type="submit"]'));
+  for (const b of btns) {
+    const t = (b.innerText || b.value || b.getAttribute('aria-label') || '').toLowerCase();
+    if (!t) continue;
+    if (needles.some(n => t.includes(n)) && isVisible(b)) {
+      try { b.click(); return true; } catch (e) {}
+    }
+  }
+  return false;
+})();
 """
+
+
+def _normalize_link(link: str) -> str:
+    """Dedupe: entferne Tracking-Query + Fragments."""
+    if not link:
+        return ""
+    try:
+        parts = urlsplit(link)
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
+    except Exception:
+        return link.strip()
 
 
 def _is_detail_link(link: str) -> bool:
     if not link:
         return False
     u = link.lower()
-    if "/detail/" in u:
+
+    # typische Detailpfade
+    if "/detail/" in u or "/job/" in u or "/jobad/" in u:
         return True
-    if re.search(
-        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", u
-    ):
+
+    # GUIDs / numeric IDs
+    if re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", u):
         return True
     if re.search(r"/\d{6,}(/|$)", u):
         return True
+
     return False
 
 
-_LINE_LABEL_RE = re.compile(
-    r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)",
-    re.IGNORECASE,
-)
+_LINE_LABEL_RE = re.compile(r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)", re.IGNORECASE)
 _LINE_RELDATE_RE = re.compile(
     r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+\s*(tagen|wochen|monaten?))\b",
     re.IGNORECASE,
@@ -73,16 +101,12 @@ def _parse_jsonld(html: str) -> List[dict]:
         stack = data if isinstance(data, list) else [data]
         while stack:
             obj = stack.pop(0)
-            if isinstance(obj, dict) and "@graph" in obj and isinstance(
-                obj["@graph"], list
-            ):
+            if isinstance(obj, dict) and "@graph" in obj and isinstance(obj["@graph"], list):
                 stack.extend(obj["@graph"])
                 continue
             if isinstance(obj, dict):
                 t = obj.get("@type")
-                if t == "JobPosting" or (
-                    isinstance(t, list) and "JobPosting" in t
-                ):
+                if t == "JobPosting" or (isinstance(t, list) and "JobPosting" in t):
                     out.append(obj)
     return out
 
@@ -105,34 +129,15 @@ def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
         if isinstance(jl, list) and jl:
             first = jl[0] if isinstance(jl[0], dict) else {}
             addr = first.get("address") or {}
-            loc = ", ".join(
-                filter(
-                    None,
-                    [
-                        addr.get("addressLocality"),
-                        addr.get("addressRegion"),
-                        addr.get("addressCountry"),
-                    ],
-                )
-            )
+            loc = ", ".join(filter(None, [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]))
         elif isinstance(jl, dict):
             addr = jl.get("address") or {}
-            loc = ", ".join(
-                filter(
-                    None,
-                    [
-                        addr.get("addressLocality"),
-                        addr.get("addressRegion"),
-                        addr.get("addressCountry"),
-                    ],
-                )
-            )
-        loc = loc.strip()
+            loc = ", ".join(filter(None, [addr.get("addressLocality"), addr.get("addressRegion"), addr.get("addressCountry")]))
+        loc = (loc or "").strip()
 
-        link = ""
-        if isinstance(org, dict):
+        link = (it.get("url") or "").strip()
+        if not link and isinstance(org, dict):
             link = (org.get("sameAs") or "").strip()
-        link = (it.get("url") or link or "").strip()
 
         date = (it.get("datePosted") or "").strip()
 
@@ -153,20 +158,20 @@ def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
     return rows
 
 
-def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
+def _extract_dom_links(driver, source_name: str, base_url: str) -> List[JobRow]:
     """
     DOM-Scrape: sucht nach Anchor-Tags mit detail-typischen hrefs.
-    Funktioniert auch wenn Seite client-seitig rendert.
-    Achtung: Anchor-Text bei jobs.ch kann Multi-Line/Noise enthalten.
-    Wir nehmen hier nur die erste sinnvolle Zeile als Titel.
+    Auch für client-side render.
     """
     rows: List[JobRow] = []
 
     selectors = [
+        'a[href*="/detail/"]',
         'a[href*="/jobs/detail/"]',
         'a[href*="/de/jobs/detail/"]',
         'a[href*="/emploi/detail/"]',
-        'a[href*="/stellenangebote/"]',  # manche detailseiten hängen hier drunter
+        'a[href*="/jobad/"]',
+        'a[href*="/job/"]',
     ]
 
     anchors = []
@@ -179,16 +184,17 @@ def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
     for a in anchors:
         try:
             href = (a.get_attribute("href") or "").strip()
+            if not href:
+                # fallback: relative href
+                href = (a.get_attribute("href") or "").strip()
+            href = urljoin(base_url, href) if href else ""
             if not _is_detail_link(href):
                 continue
 
-            txt = (a.text or "").strip()
-            if not txt:
-                txt = (a.get_attribute("aria-label") or "").strip()
+            txt = (a.text or "").strip() or (a.get_attribute("aria-label") or "").strip()
             if not txt:
                 continue
 
-            # erste brauchbare Zeile als Jobtitel (ohne relative Zeit/Labels)
             lines = [line.strip() for line in txt.splitlines() if line.strip()]
             title = ""
             for line in lines:
@@ -208,7 +214,7 @@ def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
                     location="",
                     link=href,
                     raw_title=txt,
-                    source=base_url,
+                    source=source_name,
                 )
             )
         except Exception:
@@ -217,9 +223,10 @@ def _extract_dom_links(driver, base_url: str) -> List[JobRow]:
     # dedupe
     seen, out = set(), []
     for r in rows:
-        if r.link in seen:
+        key = _normalize_link(r.link)
+        if key in seen:
             continue
-        seen.add(r.link)
+        seen.add(key)
         out.append(r)
     return out
 
@@ -228,17 +235,10 @@ class JobsChAdapter:
     source = "jobs.ch"
     BASE = "https://www.jobs.ch/de/stellenangebote/"
 
-    def search(
-        self,
-        driver,
-        query: str,
-        location: str,
-        radius_km: int,
-        limit: int = 30,
-    ) -> Iterable[JobRow]:
+    def search(self, driver, query: str, location: str, radius_km: int, limit: int = 30) -> Iterable[JobRow]:
         params = {"term": query}
         if location:
-            params["region"] = location
+            params["location"] = location  # konsistent zu Query-Builder
         url = f"{self.BASE}?{urllib.parse.urlencode(params, doseq=True)}"
 
         rows: List[JobRow] = []
@@ -252,11 +252,8 @@ class JobsChAdapter:
                 except Exception:
                     pass
 
-                # warten bis zumindest irgendwas gerendert ist
                 try:
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "a"))
-                    )
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "a")))
                 except Exception:
                     pass
 
@@ -265,16 +262,17 @@ class JobsChAdapter:
                 if parsed:
                     rows.extend(parsed)
                 else:
-                    rows.extend(_extract_dom_links(driver, self.source))
+                    rows.extend(_extract_dom_links(driver, self.source, self.BASE))
 
             except Exception:
                 continue
 
         seen, out = set(), []
         for r in rows:
-            if r.link in seen:
+            key = _normalize_link(r.link)
+            if key in seen:
                 continue
-            seen.add(r.link)
+            seen.add(key)
             out.append(r)
             if len(out) >= limit:
                 break
@@ -283,16 +281,9 @@ class JobsChAdapter:
 
 class JobupAdapter:
     source = "jobup.ch"
-    BASE = "https://www.jobup.ch/de/stellenangebote/"
+    BASE = "https://www.jobup.ch/de/jobs/"
 
-    def search(
-        self,
-        driver,
-        query: str,
-        location: str,
-        radius_km: int,
-        limit: int = 30,
-    ) -> Iterable[JobRow]:
+    def search(self, driver, query: str, location: str, radius_km: int, limit: int = 30) -> Iterable[JobRow]:
         params = {"term": query}
         if location:
             params["location"] = location
@@ -310,9 +301,7 @@ class JobupAdapter:
                     pass
 
                 try:
-                    WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "a"))
-                    )
+                    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "a")))
                 except Exception:
                     pass
 
@@ -321,16 +310,17 @@ class JobupAdapter:
                 if parsed:
                     rows.extend(parsed)
                 else:
-                    rows.extend(_extract_dom_links(driver, self.source))
+                    rows.extend(_extract_dom_links(driver, self.source, self.BASE))
 
             except Exception:
                 continue
 
         seen, out = set(), []
         for r in rows:
-            if r.link in seen:
+            key = _normalize_link(r.link)
+            if key in seen:
                 continue
-            seen.add(r.link)
+            seen.add(key)
             out.append(r)
             if len(out) >= limit:
                 break
