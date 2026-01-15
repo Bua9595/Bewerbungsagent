@@ -250,7 +250,7 @@ HTML_PAGE = """<!doctype html>
     <div class="hero">
       <div>
         <h1>Job Tracker</h1>
-        <p>Ignorieren markiert Jobs, die nicht passen.</p>
+        <p>Markiere unpassende Jobs, um sie auszublenden.</p>
       </div>
       <div class="stats" id="stats"></div>
     </div>
@@ -560,18 +560,6 @@ HTML_PAGE = """<!doctype html>
             await loadJobs();
           });
 
-          const ignoreBtn = document.createElement("button");
-          ignoreBtn.className = "btn ghost";
-          ignoreBtn.textContent = "Ignore";
-          ignoreBtn.addEventListener("click", async () => {
-            await api("/api/mark", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ job_uid: job.job_uid, status: "ignored" }),
-            });
-            await loadJobs();
-          });
-
           const openBtn = document.createElement("button");
           openBtn.className = "btn ghost";
           openBtn.textContent = "Open";
@@ -586,9 +574,7 @@ HTML_PAGE = """<!doctype html>
 
           if (job.status === "new" || job.status === "notified") {
             actionTd.appendChild(appliedBtn);
-            actionTd.appendChild(ignoreBtn);
           } else if (job.status === "applied") {
-            actionTd.appendChild(ignoreBtn);
             actionTd.appendChild(openBtn);
           } else if (job.status === "ignored") {
             actionTd.appendChild(appliedBtn);
