@@ -37,11 +37,24 @@ HTML_PAGE = """<!doctype html>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Job Tracker</title>
+  <script>
+    (function() {
+      const key = "tracker-ui-theme";
+      const stored = localStorage.getItem(key);
+      const prefersDark = window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const theme = stored || (prefersDark ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
   <style>
     :root {
+      color-scheme: light dark;
       --bg1: #f5f2ea;
       --bg2: #e8f2f4;
       --card: #ffffff;
+      --card-2: #f8fafc;
+      --chip: #f1f5f9;
       --ink: #1f2937;
       --muted: #6b7280;
       --accent: #0f766e;
@@ -50,13 +63,36 @@ HTML_PAGE = """<!doctype html>
       --ok: #059669;
       --warn: #b45309;
       --bad: #b91c1c;
+      --glow: #ffffff;
+      --shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+      --table-hover: #f9fafb;
+      --input: #ffffff;
+    }
+    :root[data-theme="dark"] {
+      --bg1: #0b1220;
+      --bg2: #090f1a;
+      --card: #101827;
+      --card-2: #0c1526;
+      --chip: #0f1c31;
+      --ink: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #22c1b2;
+      --accent-2: #fb923c;
+      --line: rgba(148, 163, 184, 0.2);
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --bad: #f87171;
+      --glow: #1b2b4a;
+      --shadow: 0 12px 36px rgba(0, 0, 0, 0.45);
+      --table-hover: rgba(148, 163, 184, 0.08);
+      --input: #0c1526;
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       font-family: "Trebuchet MS", "Segoe UI", "Tahoma", sans-serif;
       color: var(--ink);
-      background: radial-gradient(1400px circle at 20% 10%, #ffffff 0, var(--bg1) 45%, var(--bg2) 100%);
+      background: radial-gradient(1400px circle at 20% 10%, var(--glow) 0, var(--bg1) 45%, var(--bg2) 100%);
       min-height: 100vh;
     }
     .shell {
@@ -78,7 +114,7 @@ HTML_PAGE = """<!doctype html>
       border: 1px solid var(--line);
       border-radius: 16px;
       padding: 18px 20px;
-      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+      box-shadow: var(--shadow);
     }
     h1 {
       margin: 0 0 6px 0;
@@ -102,7 +138,7 @@ HTML_PAGE = """<!doctype html>
       align-items: center;
       padding: 6px 10px;
       border-radius: 999px;
-      background: #f8fafc;
+      background: var(--chip);
       border: 1px solid var(--line);
       color: var(--ink);
     }
@@ -118,7 +154,11 @@ HTML_PAGE = """<!doctype html>
       min-width: 240px;
       border-radius: 10px;
       border: 1px solid var(--line);
-      background: #ffffff;
+      background: var(--input);
+      color: var(--ink);
+    }
+    .controls input[type="text"]::placeholder {
+      color: var(--muted);
     }
     .btn {
       border: none;
@@ -131,7 +171,7 @@ HTML_PAGE = """<!doctype html>
       letter-spacing: 0.2px;
     }
     .btn.secondary {
-      background: #fff;
+      background: var(--card);
       color: var(--accent);
       border: 1px solid var(--accent);
     }
@@ -147,7 +187,7 @@ HTML_PAGE = """<!doctype html>
       border: 1px solid var(--line);
       border-radius: 16px;
       overflow-x: auto;
-      box-shadow: 0 10px 32px rgba(15, 23, 42, 0.08);
+      box-shadow: var(--shadow);
     }
     table {
       width: 100%;
@@ -156,7 +196,7 @@ HTML_PAGE = """<!doctype html>
       font-size: 14px;
     }
     thead {
-      background: #f8fafc;
+      background: var(--card-2);
       text-align: left;
     }
     th, td {
@@ -182,7 +222,7 @@ HTML_PAGE = """<!doctype html>
       content: "▼";
     }
     tbody tr:hover {
-      background: #f9fafb;
+      background: var(--table-hover);
     }
     .muted { color: var(--muted); }
     .badge {
@@ -192,7 +232,7 @@ HTML_PAGE = """<!doctype html>
       padding: 4px 10px;
       border-radius: 999px;
       font-size: 12px;
-      background: #f8fafc;
+      background: var(--chip);
       border: 1px solid var(--line);
     }
     .badge.ok { color: var(--ok); border-color: rgba(5, 150, 105, 0.3); }
@@ -205,10 +245,10 @@ HTML_PAGE = """<!doctype html>
       border-radius: 999px;
       font-size: 12px;
       border: 1px solid var(--line);
-      background: #f8fafc;
+      background: var(--chip);
     }
     .commute.good { color: var(--ok); border-color: rgba(5, 150, 105, 0.3); }
-    .commute.mid { color: #0f766e; border-color: rgba(15, 118, 110, 0.3); }
+    .commute.mid { color: var(--accent); border-color: rgba(15, 118, 110, 0.3); }
     .commute.warn { color: var(--warn); border-color: rgba(180, 83, 9, 0.35); }
     .commute.bad { color: var(--bad); border-color: rgba(185, 28, 28, 0.35); }
     .link {
@@ -257,6 +297,10 @@ HTML_PAGE = """<!doctype html>
     <div class="controls">
       <button class="btn" id="refresh">Refresh</button>
       <button class="btn secondary" id="sync">Sync Tracker</button>
+      <label class="toggle">
+        <input type="checkbox" id="toggleTheme">
+        Dark mode
+      </label>
       <label class="toggle">
         <input type="checkbox" id="showDone">
         Show done
@@ -307,6 +351,8 @@ HTML_PAGE = """<!doctype html>
     const statsEl = document.getElementById("stats");
     const lastUpdatedEl = document.getElementById("lastUpdated");
     const headerEls = document.querySelectorAll("th.sortable");
+    const themeToggle = document.getElementById("toggleTheme");
+    const themeKey = "tracker-ui-theme";
 
     function statusBadge(status) {
       const span = document.createElement("span");
@@ -656,6 +702,18 @@ HTML_PAGE = """<!doctype html>
       if (lastPayload) {
         render(lastPayload);
       }
+    });
+
+    function applyTheme(mode) {
+      document.documentElement.setAttribute("data-theme", mode);
+      localStorage.setItem(themeKey, mode);
+      themeToggle.checked = mode === "dark";
+    }
+
+    const initialTheme = document.documentElement.getAttribute("data-theme") || "light";
+    themeToggle.checked = initialTheme === "dark";
+    themeToggle.addEventListener("change", () => {
+      applyTheme(themeToggle.checked ? "dark" : "light");
     });
 
     loadJobs();

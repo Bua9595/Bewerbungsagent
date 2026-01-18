@@ -348,14 +348,26 @@ INCLUDE_KEYWORDS = _normalize_terms(
 BLOCKLIST_TERMS = _normalize_terms(
     KEYWORD_BLACKLIST | LANGUAGE_BLOCKLIST | REQUIREMENTS_BLOCKLIST
 )
+AGGREGATOR_SOURCES = {"careerjet", "jobrapido", "jooble"}
+DISABLED_SOURCES = {
+    x.strip().lower()
+    for x in (os.getenv("DISABLED_SOURCES", "") or "").split(",")
+    if x.strip()
+}
+BLOCKED_SOURCES = AGGREGATOR_SOURCES | DISABLED_SOURCES
 ENABLED_SOURCES = {
     x.strip().lower()
     for x in (
-        os.getenv("ENABLED_SOURCES", "jobs.ch,jobup.ch,indeed")
-        or "jobs.ch,jobup.ch,indeed"
+        os.getenv(
+            "ENABLED_SOURCES",
+            "jobs.ch,jobup.ch,jobscout24,indeed,monster",
+        )
+        or "jobs.ch,jobup.ch,jobscout24,indeed,monster"
     ).split(",")
     if x.strip()
 }
+if BLOCKED_SOURCES:
+    ENABLED_SOURCES = {s for s in ENABLED_SOURCES if s not in BLOCKED_SOURCES}
 EXPAND_QUERY_VARIANTS = str(
     os.getenv("EXPAND_QUERY_VARIANTS", "true")
 ).lower() in TRUTHY
@@ -572,12 +584,39 @@ def _is_remote(job: Job) -> bool:
     return any(_normalize_text(k) in normalized for k in REMOTE_KEYWORDS)
 
 
+def _tokens_in_order(tokens: list[str], terms: list[str]) -> bool:
+    if not tokens or not terms:
+        return False
+    idx = 0
+    for tok in tokens:
+        if tok == terms[idx]:
+            idx += 1
+            if idx == len(terms):
+                return True
+    return False
+
+
+def _contains_blocked_terms(normalized: str, blocked: set[str]) -> bool:
+    if not normalized or not blocked:
+        return False
+    if any(term in normalized for term in blocked):
+        return True
+    tokens = normalized.split()
+    for term in blocked:
+        if " " not in term:
+            continue
+        term_tokens = [t for t in term.split() if t]
+        if _tokens_in_order(tokens, term_tokens):
+            return True
+    return False
+
+
 def _has_blocked_keywords(job: Job, blocked: set[str]) -> bool:
     if not blocked:
         return False
     blob = " ".join([job.title or "", job.raw_title or "", job.location or ""])
     normalized = _normalize_text(blob)
-    return any(term in normalized for term in blocked)
+    return _contains_blocked_terms(normalized, blocked)
 
 
 def _has_required_keywords(job: Job, required: set[str]) -> bool:
@@ -815,7 +854,7 @@ def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
         text = _SCRIPT_STYLE_RE.sub(" ", text)
         text = _TAG_RE.sub(" ", text)
         normalized = _normalize_text(text)
-        blocked_found = any(term in normalized for term in blocked)
+        blocked_found = _contains_blocked_terms(normalized, blocked)
         DETAILS_BLOCKLIST_CACHE[url] = blocked_found
         return blocked_found
     except Exception as e:
@@ -1001,7 +1040,11 @@ def collect_jobs(
                 indeed_url = v
                 break
 
-        if indeed_url and (not ENABLED_SOURCES or "indeed" in ENABLED_SOURCES):
+        if (
+            indeed_url
+            and (not ENABLED_SOURCES or "indeed" in ENABLED_SOURCES)
+            and "indeed" not in BLOCKED_SOURCES
+        ):
             try:
                 indeed_jobs = _collect_indeed(
                     driver,
@@ -1025,7 +1068,10 @@ def collect_jobs(
             JoobleAdapter(),
         ]
         for adapter in adapters:
-            if ENABLED_SOURCES and adapter.source.lower() not in ENABLED_SOURCES:
+            source = adapter.source.lower()
+            if source in BLOCKED_SOURCES:
+                continue
+            if ENABLED_SOURCES and source not in ENABLED_SOURCES:
                 continue
 
             # über Keywords + Locations iterieren, aber früh abbrechen

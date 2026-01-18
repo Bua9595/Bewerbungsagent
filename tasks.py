@@ -35,6 +35,18 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
+AGGREGATOR_SOURCES = {"careerjet", "jobrapido", "jooble"}
+
+
+def _close_aggregator_records(state, terminal_statuses, status_closed) -> int:
+    closed = 0
+    for record in state.values():
+        source = (record.get("source") or "").strip().lower()
+        if source in AGGREGATOR_SOURCES and record.get("status") not in terminal_statuses:
+            record["status"] = status_closed
+            closed += 1
+    return closed
+
 
 def _get_run_lock_path() -> Path:
     return Path(os.getenv("RUN_LOCK_FILE", "generated/mail_list.lock"))
@@ -251,6 +263,11 @@ def cmd_mail_list(args=None):
     tracker_path = get_tracker_path()
     tracker_rows = load_tracker(tracker_path)
     tracker_updates = apply_tracker_marks(state, tracker_rows)
+    closed_aggregators = _close_aggregator_records(
+        state, TERMINAL_STATUSES, STATUS_CLOSED
+    )
+    if closed_aggregators:
+        job_logger.info(f"Aggregator-Eintraege geschlossen: {closed_aggregators}")
 
     rows = collect_jobs()
     scraped_total = len(rows)
@@ -573,7 +590,7 @@ def cmd_mail_list(args=None):
     _release_run_lock(lock_path)
 
 def cmd_tracker_sync(_args=None):
-    from job_state import load_state, save_state
+    from job_state import load_state, save_state, STATUS_CLOSED, TERMINAL_STATUSES
     from job_tracker import (
         apply_tracker_marks,
         get_tracker_path,
@@ -593,7 +610,12 @@ def cmd_tracker_sync(_args=None):
         return
 
     updates = apply_tracker_marks(state, tracker_rows)
+    closed_aggregators = _close_aggregator_records(
+        state, TERMINAL_STATUSES, STATUS_CLOSED
+    )
     if updates:
+        save_state(state)
+    if closed_aggregators:
         save_state(state)
     write_tracker(state, tracker_path, tracker_rows)
     print(f"Tracker Sync: {updates} Aktualisierungen.")
