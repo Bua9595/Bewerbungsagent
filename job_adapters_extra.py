@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from typing import Iterable, List
+from typing import Iterable, List, Optional
 from urllib.parse import quote_plus, urljoin, urlsplit, urlunsplit, parse_qsl, urlencode
 
 import requests
@@ -21,8 +23,14 @@ class ExtraJobRow:
     source: str = "unknown"
 
 
+ADAPTER_REQUEST_DELAY = float(os.getenv("ADAPTER_REQUEST_DELAY", "0") or 0)
+
 DEFAULT_HEADERS = {
-    "User-Agent": "Bewerbungsagent/1.0 (+adapter)",
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/121.0.0.0 Safari/537.36"
+    ),
     "Accept-Language": "de-CH,de;q=0.9,en;q=0.8",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
@@ -111,6 +119,8 @@ class _LinkParser(HTMLParser):
 
 
 def _fetch_html(url: str, timeout: int = 15) -> str:
+    if ADAPTER_REQUEST_DELAY > 0:
+        time.sleep(ADAPTER_REQUEST_DELAY)
     resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
     resp.raise_for_status()
     return resp.text or ""
@@ -197,7 +207,7 @@ def _rows_from_links(
     domain_hint: str,
     link_patterns: list[re.Pattern],
     fallback_location: str,
-    limit: int,
+    limit: Optional[int],
 ) -> List[ExtraJobRow]:
     parser = _LinkParser()
     parser.feed(html)
@@ -237,7 +247,7 @@ def _rows_from_links(
                 source=source,
             )
         )
-        if len(rows) >= limit:
+        if limit is not None and len(rows) >= limit:
             break
 
     return rows
@@ -252,7 +262,7 @@ class _BaseRequestsAdapter:
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         raise NotImplementedError
 
-    def search(self, _driver, query: str, location: str, radius_km: int = 25, limit: int = 25) -> List[ExtraJobRow]:
+    def search(self, _driver, query: str, location: str, radius_km: int = 25, limit: Optional[int] = 25) -> List[ExtraJobRow]:
         url = self.build_url(query, location, radius_km)
         try:
             html = _fetch_html(url)
@@ -261,7 +271,7 @@ class _BaseRequestsAdapter:
 
         rows = _jsonld_to_rows(_parse_jsonld(html), self.source, location)
         if rows:
-            return rows[:limit]
+            return rows if limit is None else rows[:limit]
 
         return _rows_from_links(
             html=html,

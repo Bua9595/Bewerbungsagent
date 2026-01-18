@@ -271,6 +271,58 @@ def _commute_minutes_for(
     return None
 
 
+AGGREGATOR_NOT_FOUND_MARKERS = (
+    "404",
+    "page not found",
+    "seite nicht gefunden",
+    "not found",
+    "nicht gefunden",
+    "job not found",
+    "no longer available",
+    "not available",
+)
+
+
+def _aggregator_link_ok(url: str) -> bool:
+    if not url:
+        return False
+    if url in AGGREGATOR_LINK_CACHE:
+        return AGGREGATOR_LINK_CACHE[url]
+    try:
+        resp = requests.get(
+            url,
+            headers={"User-Agent": "Bewerbungsagent/1.0 (+aggregator-check)"},
+            timeout=AGGREGATOR_VALIDATE_TIMEOUT,
+            allow_redirects=True,
+            stream=True,
+        )
+    except Exception:
+        AGGREGATOR_LINK_CACHE[url] = False
+        return False
+
+    ok = True
+    if resp.status_code >= 400:
+        ok = False
+    else:
+        data = b""
+        try:
+            for chunk in resp.iter_content(chunk_size=4096):
+                if not chunk:
+                    break
+                data += chunk
+                if len(data) >= AGGREGATOR_VALIDATE_MAX_BYTES:
+                    break
+        except Exception:
+            ok = False
+        if ok:
+            text = data.decode("utf-8", errors="ignore").lower()
+            if any(marker in text for marker in AGGREGATOR_NOT_FOUND_MARKERS):
+                ok = False
+
+    AGGREGATOR_LINK_CACHE[url] = ok
+    return ok
+
+
 def _normalize_terms(items: set[str]) -> set[str]:
     return {_normalize_text(x) for x in items if x}
 
@@ -349,12 +401,24 @@ BLOCKLIST_TERMS = _normalize_terms(
     KEYWORD_BLACKLIST | LANGUAGE_BLOCKLIST | REQUIREMENTS_BLOCKLIST
 )
 AGGREGATOR_SOURCES = {"careerjet", "jobrapido", "jooble"}
+ALLOW_AGGREGATORS = str(os.getenv("ALLOW_AGGREGATORS", "false")).lower() in TRUTHY
+AGGREGATOR_VALIDATE_LINKS = (
+    str(os.getenv("AGGREGATOR_VALIDATE_LINKS", "true")).lower() in TRUTHY
+)
+AGGREGATOR_VALIDATE_TIMEOUT = float(
+    os.getenv("AGGREGATOR_VALIDATE_TIMEOUT", "8") or 8
+)
+AGGREGATOR_VALIDATE_MAX_BYTES = int(
+    os.getenv("AGGREGATOR_VALIDATE_MAX_BYTES", "20000") or 20000
+)
 DISABLED_SOURCES = {
     x.strip().lower()
     for x in (os.getenv("DISABLED_SOURCES", "") or "").split(",")
     if x.strip()
 }
-BLOCKED_SOURCES = AGGREGATOR_SOURCES | DISABLED_SOURCES
+BLOCKED_SOURCES = DISABLED_SOURCES | (
+    set() if ALLOW_AGGREGATORS else AGGREGATOR_SOURCES
+)
 ENABLED_SOURCES = {
     x.strip().lower()
     for x in (
@@ -378,6 +442,8 @@ EXTRA_QUERY_TERMS = [
     for x in (os.getenv("EXTRA_QUERY_TERMS", "") or "").split(",")
     if x.strip()
 ]
+COLLECT_LIMIT_PER_SITE = int(os.getenv("COLLECT_LIMIT_PER_SITE", "25") or 25)
+COLLECT_MAX_TOTAL = int(os.getenv("COLLECT_MAX_TOTAL", "100") or 100)
 DETAILS_BLOCKLIST_SCAN = str(
     os.getenv("DETAILS_BLOCKLIST_SCAN", "false")
 ).lower() in TRUTHY
@@ -426,6 +492,7 @@ TRANSIT_TIMEOUT = float(os.getenv("TRANSIT_TIMEOUT", "12") or 12)
 DETAILS_BLOCKLIST_CACHE: dict[str, bool] = {}
 DETAILS_CONTACT_CACHE: dict[str, tuple[str, str]] = {}
 TRANSIT_CACHE: dict[tuple[str, str, str, str], int | None] = {}
+AGGREGATOR_LINK_CACHE: dict[str, bool] = {}
 COMPANY_CAREERS_ENABLED = str(
     os.getenv("COMPANY_CAREERS_ENABLED", "false")
 ).lower() in TRUTHY
@@ -956,7 +1023,7 @@ def export_json(rows: List[Job], path: str | None = None) -> None:
 def _collect_indeed(
     driver: webdriver.Chrome,
     url: str,
-    limit: int = 25,
+    limit: int | None = 25,
 ) -> List[Job]:
     jobs: List[Job] = []
     _get_html(driver, url)
@@ -969,7 +1036,8 @@ def _collect_indeed(
         pass
 
     cards = driver.find_elements(By.CSS_SELECTOR, "a.tapItem")
-    for a in cards[:limit]:
+    card_items = cards if limit is None else cards[:limit]
+    for a in card_items:
         try:
             title = _text(a.find_element(By.CSS_SELECTOR, "span.jobTitle").text)
         except Exception:
@@ -1006,10 +1074,26 @@ def _collect_indeed(
     return jobs
 
 
+def _normalize_limit(value: int | None) -> int | None:
+    if value is None:
+        return None
+    return value if value > 0 else None
+
+
 def collect_jobs(
-    limit_per_site: int = 25,
-    max_total: int = 100,
+    limit_per_site: int | None = None,
+    max_total: int | None = None,
 ) -> List[Job]:
+    if limit_per_site is None:
+        limit_per_site = _normalize_limit(COLLECT_LIMIT_PER_SITE)
+    else:
+        limit_per_site = _normalize_limit(limit_per_site)
+
+    if max_total is None:
+        max_total = _normalize_limit(COLLECT_MAX_TOTAL)
+    else:
+        max_total = _normalize_limit(max_total)
+
     urls = build_search_urls(config)
 
     base_keywords = getattr(config, "SEARCH_KEYWORDS", []) or ["IT Support"]
@@ -1114,14 +1198,14 @@ def collect_jobs(
                             f"(query='{query}', loc='{loc}')"
                         )
 
-                        if len(all_jobs) >= max_total * 2:
+                        if max_total and len(all_jobs) >= max_total * 2:
                             break
                     except Exception as e:
                         job_logger.warning(
                             f"Adapter {adapter.source} Fehler "
                             f"(query='{query}', loc='{loc}'): {e}"
                         )
-                if len(all_jobs) >= max_total * 2:
+                if max_total and len(all_jobs) >= max_total * 2:
                     break
 
         if COMPANY_CAREERS_ENABLED and COMPANY_CAREER_URLS:
@@ -1205,6 +1289,14 @@ def collect_jobs(
         if _has_blocked_keywords(j, BLOCKLIST_TERMS):
             continue
 
+        if (
+            ALLOW_AGGREGATORS
+            and AGGREGATOR_VALIDATE_LINKS
+            and j.source in AGGREGATOR_SOURCES
+            and not _aggregator_link_ok(j.link)
+        ):
+            continue
+
         if j.source in ("jobs.ch", "jobup.ch"):
             link_has_digit = bool(re.search(r"\d", j.link))
             tail = "/".join(j.link.rstrip("/").split("/")[-2:])
@@ -1264,7 +1356,9 @@ def collect_jobs(
         unique.append(j)
 
     unique.sort(key=lambda x: x.score, reverse=True)
-    return unique[:max_total]
+    if max_total:
+        return unique[:max_total]
+    return unique
 
 
 def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:

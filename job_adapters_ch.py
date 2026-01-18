@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import urllib.parse
 from dataclasses import dataclass
@@ -49,6 +50,8 @@ COOKIE_CLICK_JS = r"""
   return false;
 })();
 """
+
+COLLECT_MAX_PAGES = int(os.getenv("COLLECT_MAX_PAGES", "3") or 3)
 
 
 def _normalize_link(link: str) -> str:
@@ -235,15 +238,16 @@ class JobsChAdapter:
     source = "jobs.ch"
     BASE = "https://www.jobs.ch/de/stellenangebote/"
 
-    def search(self, driver, query: str, location: str, radius_km: int, limit: int = 30) -> Iterable[JobRow]:
+    def search(self, driver, query: str, location: str, radius_km: int, limit: Optional[int] = 30) -> Iterable[JobRow]:
         params = {"term": query}
         if location:
             params["location"] = location  # konsistent zu Query-Builder
         url = f"{self.BASE}?{urllib.parse.urlencode(params, doseq=True)}"
 
         rows: List[JobRow] = []
+        max_pages = COLLECT_MAX_PAGES if COLLECT_MAX_PAGES > 0 else 1
 
-        for p in range(1, 4):
+        for p in range(1, max_pages + 1):
             paged = url + f"&page={p}"
             try:
                 driver.get(paged)
@@ -258,11 +262,12 @@ class JobsChAdapter:
                     pass
 
                 html = driver.page_source or ""
-                parsed = _to_jobrows(_parse_jsonld(html), self.source)
-                if parsed:
-                    rows.extend(parsed)
-                else:
-                    rows.extend(_extract_dom_links(driver, self.source, self.BASE))
+                page_rows = _to_jobrows(_parse_jsonld(html), self.source)
+                if not page_rows:
+                    page_rows = _extract_dom_links(driver, self.source, self.BASE)
+                if not page_rows:
+                    break
+                rows.extend(page_rows)
 
             except Exception:
                 continue
@@ -274,7 +279,7 @@ class JobsChAdapter:
                 continue
             seen.add(key)
             out.append(r)
-            if len(out) >= limit:
+            if limit is not None and len(out) >= limit:
                 break
         return out
 
@@ -283,15 +288,16 @@ class JobupAdapter:
     source = "jobup.ch"
     BASE = "https://www.jobup.ch/de/jobs/"
 
-    def search(self, driver, query: str, location: str, radius_km: int, limit: int = 30) -> Iterable[JobRow]:
+    def search(self, driver, query: str, location: str, radius_km: int, limit: Optional[int] = 30) -> Iterable[JobRow]:
         params = {"term": query}
         if location:
             params["location"] = location
         url = f"{self.BASE}?{urllib.parse.urlencode(params, doseq=True)}"
 
         rows: List[JobRow] = []
+        max_pages = COLLECT_MAX_PAGES if COLLECT_MAX_PAGES > 0 else 1
 
-        for p in range(1, 4):
+        for p in range(1, max_pages + 1):
             paged = url + f"&page={p}"
             try:
                 driver.get(paged)
@@ -306,11 +312,12 @@ class JobupAdapter:
                     pass
 
                 html = driver.page_source or ""
-                parsed = _to_jobrows(_parse_jsonld(html), self.source)
-                if parsed:
-                    rows.extend(parsed)
-                else:
-                    rows.extend(_extract_dom_links(driver, self.source, self.BASE))
+                page_rows = _to_jobrows(_parse_jsonld(html), self.source)
+                if not page_rows:
+                    page_rows = _extract_dom_links(driver, self.source, self.BASE)
+                if not page_rows:
+                    break
+                rows.extend(page_rows)
 
             except Exception:
                 continue
@@ -322,6 +329,6 @@ class JobupAdapter:
                 continue
             seen.add(key)
             out.append(r)
-            if len(out) >= limit:
+            if limit is not None and len(out) >= limit:
                 break
         return out
