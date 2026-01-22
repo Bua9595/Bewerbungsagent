@@ -175,11 +175,27 @@ HTML_PAGE = """<!doctype html>
       color: var(--accent);
       border: 1px solid var(--accent);
     }
+    .btn.filter {
+      background: var(--card);
+      color: var(--muted);
+      border: 1px solid var(--line);
+    }
+    .btn.filter.active {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+    }
     .btn.ghost {
       background: transparent;
       border: 1px dashed var(--line);
       color: var(--muted);
       font-weight: 500;
+    }
+    .filter-group {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
     }
     .table-wrap {
       margin-top: 18px;
@@ -297,6 +313,12 @@ HTML_PAGE = """<!doctype html>
     <div class="controls">
       <button class="btn" id="refresh">Refresh</button>
       <button class="btn secondary" id="sync">Sync Tracker</button>
+      <div class="filter-group" id="statusFilters">
+        <button class="btn filter" data-status="open">Open</button>
+        <button class="btn filter" data-status="applied">Applied</button>
+        <button class="btn filter" data-status="ignored">Ignored</button>
+        <button class="btn filter" data-status="closed">Closed</button>
+      </div>
       <label class="toggle">
         <input type="checkbox" id="toggleTheme">
         Dark mode
@@ -321,6 +343,7 @@ HTML_PAGE = """<!doctype html>
             <th class="sortable" data-sort="company">Firma</th>
             <th class="sortable" data-sort="commute">Ort</th>
             <th class="sortable" data-sort="status">Status</th>
+            <th class="sortable" data-sort="applied_at">Applied at</th>
             <th class="sortable" data-sort="score">Score</th>
             <th class="sortable" data-sort="match">Match</th>
             <th class="sortable" data-sort="source">Quelle</th>
@@ -343,6 +366,7 @@ HTML_PAGE = """<!doctype html>
       query: "",
       sortKey: "last_seen",
       sortDir: "desc",
+      statusFilters: new Set(),
     };
     let lastPayload = null;
 
@@ -353,6 +377,7 @@ HTML_PAGE = """<!doctype html>
     const headerEls = document.querySelectorAll("th.sortable");
     const themeToggle = document.getElementById("toggleTheme");
     const themeKey = "tracker-ui-theme";
+    const statusFiltersEl = document.getElementById("statusFilters");
 
     function statusBadge(status) {
       const span = document.createElement("span");
@@ -418,6 +443,17 @@ HTML_PAGE = """<!doctype html>
       return text.includes(query);
     }
 
+    function statusGroup(status) {
+      if (!status) return "open";
+      if (status === "new" || status === "notified") return "open";
+      return status;
+    }
+
+    function statusMatches(job) {
+      if (!state.statusFilters.size) return true;
+      return state.statusFilters.has(statusGroup(job.status));
+    }
+
     function sortJobs(jobs) {
       const sorted = [...jobs];
       const statusRank = {
@@ -451,6 +487,8 @@ HTML_PAGE = """<!doctype html>
             return num(job.commute_min, 9999);
           case "status":
             return statusRank[job.status] ?? 99;
+          case "applied_at":
+            return ts(job.applied_at);
           case "score":
             return num(job.score, 0);
           case "match":
@@ -489,8 +527,13 @@ HTML_PAGE = """<!doctype html>
 
     async function loadJobs() {
       const qs = new URLSearchParams();
-      if (state.includeDone) qs.set("include_done", "1");
-      if (state.includeClosed) qs.set("include_closed", "1");
+      const needsDone =
+        state.includeDone
+        || state.statusFilters.has("applied")
+        || state.statusFilters.has("ignored");
+      const needsClosed = state.includeClosed || state.statusFilters.has("closed");
+      if (needsDone) qs.set("include_done", "1");
+      if (needsClosed) qs.set("include_closed", "1");
       const query = qs.toString();
       lastPayload = await api("/api/jobs" + (query ? "?" + query : ""));
       render(lastPayload);
@@ -498,7 +541,7 @@ HTML_PAGE = """<!doctype html>
 
     function render(payload) {
       const filtered = (payload.jobs || []).filter((job) =>
-        jobMatches(job, state.query)
+        jobMatches(job, state.query) && statusMatches(job)
       );
       const jobs = sortJobs(filtered);
       rowsEl.innerHTML = "";
@@ -550,6 +593,14 @@ HTML_PAGE = """<!doctype html>
         const statusTd = document.createElement("td");
         statusTd.appendChild(statusBadge(job.status));
         tr.appendChild(statusTd);
+
+        const appliedTd = document.createElement("td");
+        if (statusGroup(job.status) === "applied") {
+          appliedTd.textContent = fmt(job.applied_at);
+        } else {
+          appliedTd.textContent = "";
+        }
+        tr.appendChild(appliedTd);
 
         const scoreTd = document.createElement("td");
         scoreTd.textContent = job.score || "";
@@ -652,6 +703,7 @@ HTML_PAGE = """<!doctype html>
       source: "asc",
       first_seen: "desc",
       last_seen: "desc",
+      applied_at: "desc",
       uid: "asc",
     };
 
@@ -688,6 +740,20 @@ HTML_PAGE = """<!doctype html>
     document.getElementById("sync").addEventListener("click", async () => {
       await api("/api/sync", { method: "POST" });
       await loadJobs();
+    });
+    statusFiltersEl.querySelectorAll("button").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const status = btn.dataset.status;
+        if (!status) return;
+        if (state.statusFilters.has(status)) {
+          state.statusFilters.delete(status);
+          btn.classList.remove("active");
+        } else {
+          state.statusFilters.add(status);
+          btn.classList.add("active");
+        }
+        loadJobs();
+      });
     });
     document.getElementById("showDone").addEventListener("change", (ev) => {
       state.includeDone = ev.target.checked;
@@ -881,6 +947,7 @@ def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
                 "match": record.get("match") or "",
                 "first_seen_at": record.get("first_seen_at") or "",
                 "last_seen_at": record.get("last_seen_at") or "",
+                "applied_at": record.get("applied_at") or "",
                 "has_application_doc": bool(doc_path),
                 "commute_min": commute_min,
             }
@@ -1000,6 +1067,10 @@ class TrackerHandler(BaseHTTPRequestHandler):
                 return
 
             record["status"] = status
+            if status == STATUS_APPLIED:
+                record["applied_at"] = now_iso()
+            else:
+                record.pop("applied_at", None)
             save_state(state)
             tracker_path = get_tracker_path()
             tracker_rows = load_tracker(tracker_path)

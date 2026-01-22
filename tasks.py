@@ -28,6 +28,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import smtplib
@@ -251,6 +252,16 @@ def cmd_mail_list(args=None):
     if not _acquire_run_lock(lock_path, lock_ttl_min, job_logger):
         return
 
+    timing_enabled = str(os.getenv("TIMING_ENABLED", "false")).lower() in {
+        "1",
+        "true",
+        "t",
+        "y",
+        "yes",
+        "ja",
+        "j",
+    }
+
     stamp = now_iso()
     now_dt = parse_ts(stamp) or datetime.now(timezone.utc)
 
@@ -269,7 +280,13 @@ def cmd_mail_list(args=None):
     if closed_aggregators:
         job_logger.info(f"Aggregator-Eintraege geschlossen: {closed_aggregators}")
 
+    collect_start = time.perf_counter() if timing_enabled else 0.0
     rows = collect_jobs()
+    if timing_enabled:
+        job_logger.info(
+            "timing mail_list.collect_jobs="
+            f"{time.perf_counter() - collect_start:.2f}s count={len(rows)}"
+        )
     scraped_total = len(rows)
     if not rows:
         applied_count = sum(
@@ -320,7 +337,13 @@ def cmd_mail_list(args=None):
         job_logger.info(f"Run-Lock freigegeben: {lock_path}")
         _release_run_lock(lock_path)
         return
+    export_start = time.perf_counter() if timing_enabled else 0.0
     export_json(rows)
+    if timing_enabled:
+        job_logger.info(
+            "timing mail_list.export_json="
+            f"{time.perf_counter() - export_start:.2f}s"
+        )
 
     min_score = int(os.getenv("MIN_SCORE_MAIL", "2") or 2)
 
@@ -673,7 +696,7 @@ def _resolve_job_uid(state, job_uid, url):
 
 
 def _mark_job_state(args, status):
-    from bewerbungsagent.job_state import load_state, save_state
+    from bewerbungsagent.job_state import STATUS_APPLIED, load_state, now_iso, save_state
 
     state = load_state()
     if not state:
@@ -691,6 +714,10 @@ def _mark_job_state(args, status):
 
     prev = record.get("status") or ""
     record["status"] = status
+    if status == STATUS_APPLIED:
+        record["applied_at"] = now_iso()
+    else:
+        record.pop("applied_at", None)
     save_state(state)
     try:
         from bewerbungsagent.job_tracker import get_tracker_path, load_tracker, write_tracker

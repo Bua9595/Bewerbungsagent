@@ -118,10 +118,15 @@ class _LinkParser(HTMLParser):
         self._text_parts = []
 
 
-def _fetch_html(url: str, timeout: int = 15) -> str:
+def _fetch_html(
+    url: str,
+    timeout: float = 15,
+    session: requests.Session | None = None,
+) -> str:
     if ADAPTER_REQUEST_DELAY > 0:
         time.sleep(ADAPTER_REQUEST_DELAY)
-    resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
+    client = session or requests
+    resp = client.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
     resp.raise_for_status()
     return resp.text or ""
 
@@ -262,10 +267,19 @@ class _BaseRequestsAdapter:
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         raise NotImplementedError
 
-    def search(self, _driver, query: str, location: str, radius_km: int = 25, limit: Optional[int] = 25) -> List[ExtraJobRow]:
+    def search(
+        self,
+        _driver,
+        query: str,
+        location: str,
+        radius_km: int = 25,
+        limit: Optional[int] = 25,
+        session: requests.Session | None = None,
+        timeout: float = 15,
+    ) -> List[ExtraJobRow]:
         url = self.build_url(query, location, radius_km)
         try:
-            html = _fetch_html(url)
+            html = _fetch_html(url, timeout=timeout, session=session)
         except Exception:
             return []
 

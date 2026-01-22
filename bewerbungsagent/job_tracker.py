@@ -13,12 +13,14 @@ from .job_state import (
     STATUS_APPLIED,
     STATUS_CLOSED,
     STATUS_IGNORED,
+    now_iso,
     parse_ts,
 )
 
 TRACKER_HEADERS = [
     "job_uid",
     "status",
+    "applied_at",
     "erledigt",
     "aktion",
     "title",
@@ -130,6 +132,7 @@ def apply_tracker_marks(
     tracker_rows: Dict[str, Dict[str, Any]],
 ) -> int:
     updates = 0
+    stamp = now_iso()
     for uid, row in tracker_rows.items():
         record = state.get(uid)
         if not record:
@@ -145,6 +148,10 @@ def apply_tracker_marks(
             desired = STATUS_APPLIED
         if desired and record.get("status") != desired:
             record["status"] = desired
+            if desired == STATUS_APPLIED:
+                record["applied_at"] = stamp
+            else:
+                record.pop("applied_at", None)
             updates += 1
     return updates
 
@@ -170,6 +177,7 @@ def build_tracker_rows(
             {
                 "job_uid": uid,
                 "status": status,
+                "applied_at": record.get("applied_at") or "",
                 "erledigt": CHECKBOX_EMPTY,
                 "title": record.get("title") or "",
                 "company": record.get("company") or "",

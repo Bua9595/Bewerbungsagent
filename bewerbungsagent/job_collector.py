@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -10,6 +11,7 @@ import os
 import re
 import json
 import time
+import threading
 import unicodedata
 from urllib.parse import urljoin, urlparse
 
@@ -254,6 +256,65 @@ def _dedupe_terms(items: List[str]) -> List[str]:
     return out
 
 
+def _batch_terms(terms: List[str], batch_size: int, joiner: str) -> List[str]:
+    if batch_size <= 1:
+        return terms
+    joiner = (joiner or "OR").strip()
+    joiner = f" {joiner} " if joiner else " OR "
+    out: List[str] = []
+    for i in range(0, len(terms), batch_size):
+        chunk = [t for t in terms[i : i + batch_size] if t]
+        if not chunk:
+            continue
+        if len(chunk) == 1:
+            out.append(chunk[0])
+        else:
+            out.append(joiner.join(chunk))
+    return out
+
+
+def _empty_cache_key(source: str, query: str, location: str, radius_km: int) -> str:
+    src = (source or "").strip().lower()
+    q = _normalize_text(query or "")
+    loc = _normalize_text(location or "")
+    return f"{src}|{q}|{loc}|{radius_km}"
+
+
+def _load_empty_search_cache(path: Path) -> dict[str, float]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    out: dict[str, float] = {}
+    for key, value in data.items():
+        try:
+            out[str(key)] = float(value)
+        except Exception:
+            continue
+    return out
+
+
+def _prune_empty_search_cache(
+    cache: dict[str, float],
+    ttl_seconds: float,
+    now_ts: float,
+) -> dict[str, float]:
+    if ttl_seconds <= 0:
+        return {}
+    return {k: v for k, v in cache.items() if (now_ts - v) <= ttl_seconds}
+
+
+def _save_empty_search_cache(path: Path, cache: dict[str, float]) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(cache, f, indent=2, sort_keys=True)
+    except Exception:
+        return
+
+
 TRUTHY = {"1", "true", "t", "y", "yes", "ja", "j"}
 EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
 EXPORT_CSV_PATH = os.getenv("EXPORT_CSV_PATH", "generated/jobs_latest.csv")
@@ -263,6 +324,13 @@ STRICT_LOCATION_FILTER = str(
     os.getenv("STRICT_LOCATION_FILTER", "true")
 ).lower() in TRUTHY
 ADAPTER_REQUEST_DELAY = float(os.getenv("ADAPTER_REQUEST_DELAY", "0") or 0)
+REQUESTS_ADAPTER_WORKERS = int(os.getenv("REQUESTS_ADAPTER_WORKERS", "6") or 6)
+REQUESTS_ADAPTER_TIMEOUT = float(os.getenv("REQUESTS_ADAPTER_TIMEOUT", "15") or 15)
+EMPTY_SEARCH_TTL_HOURS = float(os.getenv("EMPTY_SEARCH_TTL_HOURS", "0") or 0)
+EMPTY_SEARCH_CACHE_PATH = Path(
+    os.getenv("EMPTY_SEARCH_CACHE_PATH", "generated/empty_search_cache.json")
+)
+TIMING_ENABLED = str(os.getenv("TIMING_ENABLED", "false")).lower() in TRUTHY
 ALLOWED_LOCATION_BOOST = int(os.getenv("ALLOWED_LOCATION_BOOST", "2") or 2)
 ALLOWED_LOCATIONS = {
     x.strip().lower()
@@ -353,6 +421,13 @@ EXPAND_QUERY_VARIANTS = str(
 ).lower() in TRUTHY
 QUERY_VARIANTS_LIMIT = int(os.getenv("QUERY_VARIANTS_LIMIT", "6") or 6)
 MAX_QUERY_TERMS = int(os.getenv("MAX_QUERY_TERMS", "8") or 8)
+QUERY_BATCH_SIZE = int(os.getenv("QUERY_BATCH_SIZE", "1") or 1)
+QUERY_BATCH_JOINER = os.getenv("QUERY_BATCH_JOINER", " OR ")
+QUERY_BATCH_SOURCES = {
+    x.strip().lower()
+    for x in (os.getenv("QUERY_BATCH_SOURCES", "") or "").split(",")
+    if x.strip()
+}
 EXTRA_QUERY_TERMS = [
     x.strip()
     for x in (os.getenv("EXTRA_QUERY_TERMS", "") or "").split(",")
@@ -1001,10 +1076,18 @@ def _adapter_pause() -> None:
         time.sleep(ADAPTER_REQUEST_DELAY)
 
 
+def _timing_log(label: str, seconds: float, extra: str = "") -> None:
+    if not TIMING_ENABLED:
+        return
+    suffix = f" {extra}" if extra else ""
+    job_logger.info(f"timing {label}={seconds:.2f}s{suffix}")
+
+
 def collect_jobs(
     limit_per_site: int | None = None,
     max_total: int | None = None,
 ) -> List[Job]:
+    total_start = time.perf_counter() if TIMING_ENABLED else 0.0
     if limit_per_site is None:
         limit_per_site = _normalize_limit(COLLECT_LIMIT_PER_SITE)
     else:
@@ -1034,8 +1117,28 @@ def collect_jobs(
     if MAX_QUERY_TERMS > 0:
         query_terms = query_terms[:MAX_QUERY_TERMS]
 
+    batched_queries = _batch_terms(
+        query_terms,
+        max(1, QUERY_BATCH_SIZE),
+        QUERY_BATCH_JOINER,
+    )
+    empty_cache_ttl_sec = max(0.0, EMPTY_SEARCH_TTL_HOURS * 3600.0)
+    empty_cache: dict[str, float] = {}
+    empty_cache_updates: dict[str, float] = {}
+    empty_cache_skips = 0
+    cache_now = time.time()
+    if empty_cache_ttl_sec > 0:
+        empty_cache = _prune_empty_search_cache(
+            _load_empty_search_cache(EMPTY_SEARCH_CACHE_PATH),
+            empty_cache_ttl_sec,
+            cache_now,
+        )
+
     all_jobs: List[Job] = []
+    driver_start = time.perf_counter() if TIMING_ENABLED else 0.0
     driver = _mk_driver(headless=getattr(config, "HEADLESS_MODE", True))
+    if TIMING_ENABLED:
+        _timing_log("driver_init", time.perf_counter() - driver_start)
 
     try:
         # Indeed (falls URL vorhanden)
@@ -1052,6 +1155,7 @@ def collect_jobs(
         ):
             try:
                 _adapter_pause()
+                adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
                 indeed_jobs = _collect_indeed(
                     driver,
                     indeed_url,
@@ -1059,12 +1163,17 @@ def collect_jobs(
                 )
                 all_jobs.extend(indeed_jobs)
                 job_logger.info(f"Indeed: {len(indeed_jobs)} Karten gefunden")
+                if TIMING_ENABLED:
+                    _timing_log(
+                        "adapter.indeed",
+                        time.perf_counter() - adapter_start,
+                        f"count={len(indeed_jobs)}",
+                    )
             except Exception as e:
                 job_logger.warning(f"Indeed Adapter Fehler: {e}")
 
-        adapters = [
-            JobsChAdapter(),
-            JobupAdapter(),
+        adapter_totals: dict[str, float] = {}
+        request_adapters = [
             JobScout24Adapter(),
             JobWinnerAdapter(),
             CareerjetAdapter(),
@@ -1073,16 +1182,139 @@ def collect_jobs(
             JoraAdapter(),
             JoobleAdapter(),
         ]
-        for adapter in adapters:
+        selenium_adapters = [
+            JobsChAdapter(),
+            JobupAdapter(),
+        ]
+        request_tasks: list[tuple[object, str, str]] = []
+        request_futures: dict = {}
+        request_executor: ThreadPoolExecutor | None = None
+        request_local = threading.local()
+
+        def _get_request_session() -> requests.Session:
+            session = getattr(request_local, "session", None)
+            if session is None:
+                session = requests.Session()
+                request_local.session = session
+            return session
+
+        def _run_request_search(adapter, query: str, loc: str):
+            session = _get_request_session()
+            started = time.perf_counter()
+            rows = adapter.search(
+                None,
+                query=query,
+                location=loc,
+                radius_km=radius_km,
+                limit=limit_per_site,
+                session=session,
+                timeout=float(REQUESTS_ADAPTER_TIMEOUT),
+            )
+            duration = time.perf_counter() - started
+            return adapter.source, query, loc, rows, duration
+
+        def _append_rows(
+            adapter_source: str,
+            rows,
+            query: str,
+            loc: str,
+        ) -> int:
+            converted = 0
+            for r in rows:
+                if not isinstance(r, (CHJobRow, ExtraJobRow)):
+                    if not getattr(r, "title", None) or not getattr(r, "link", None):
+                        continue
+                score, label = _score_title(r.title)
+                all_jobs.append(
+                    Job(
+                        raw_title=getattr(r, "raw_title", "") or r.title,
+                        title=r.title,
+                        company=getattr(r, "company", ""),
+                        location=getattr(r, "location", ""),
+                        link=r.link,
+                        source=adapter_source,
+                        score=score,
+                        match=label,
+                        date=getattr(r, "date", "") or "",
+                    )
+                )
+                converted += 1
+                if max_total and len(all_jobs) >= max_total * 2:
+                    break
+
+            job_logger.info(
+                f"{adapter_source}: {converted} Roh-Treffer "
+                f"(query='{query}', loc='{loc}')"
+            )
+            return converted
+
+        def _handle_request_result(
+            source: str,
+            query: str,
+            loc: str,
+            rows,
+            duration: float,
+        ) -> None:
+            converted = _append_rows(source, rows, query, loc)
+            if empty_cache_ttl_sec > 0 and converted == 0:
+                key = _empty_cache_key(source, query, loc, radius_km)
+                empty_cache_updates[key] = time.time()
+            adapter_totals[source.lower()] = (
+                adapter_totals.get(source.lower(), 0.0) + duration
+            )
+
+        if request_adapters:
+            for adapter in request_adapters:
+                source = adapter.source.lower()
+                if source in BLOCKED_SOURCES:
+                    continue
+                if ENABLED_SOURCES and source not in ENABLED_SOURCES:
+                    continue
+                source_queries = (
+                    batched_queries
+                    if QUERY_BATCH_SIZE > 1 and source in QUERY_BATCH_SOURCES
+                    else query_terms
+                )
+                for query in source_queries:
+                    for loc in locations:
+                        if empty_cache_ttl_sec > 0:
+                            key = _empty_cache_key(source, query, loc, radius_km)
+                            if key in empty_cache:
+                                empty_cache_skips += 1
+                                continue
+                        request_tasks.append((adapter, query, loc))
+
+            if request_tasks and REQUESTS_ADAPTER_WORKERS > 1:
+                max_workers = min(
+                    max(1, REQUESTS_ADAPTER_WORKERS),
+                    len(request_tasks),
+                )
+                request_executor = ThreadPoolExecutor(max_workers=max_workers)
+                for adapter, query, loc in request_tasks:
+                    future = request_executor.submit(
+                        _run_request_search,
+                        adapter,
+                        query,
+                        loc,
+                    )
+                    request_futures[future] = (adapter, query, loc)
+
+        for adapter in selenium_adapters:
             source = adapter.source.lower()
             if source in BLOCKED_SOURCES:
                 continue
             if ENABLED_SOURCES and source not in ENABLED_SOURCES:
                 continue
 
-            # über Keywords + Locations iterieren, aber früh abbrechen
+            adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
+            # ?ber Keywords + Locations iterieren, aber fr?h abbrechen
             for query in query_terms:
                 for loc in locations:
+                    if empty_cache_ttl_sec > 0:
+                        key = _empty_cache_key(source, query, loc, radius_km)
+                        if key in empty_cache:
+                            empty_cache_skips += 1
+                            continue
                     try:
                         _adapter_pause()
                         rows = adapter.search(
@@ -1093,33 +1325,10 @@ def collect_jobs(
                             limit=limit_per_site,
                         )
 
-                        converted = 0
-                        for r in rows:
-                            if not isinstance(r, (CHJobRow, ExtraJobRow)):
-                                if not getattr(r, "title", None) or not getattr(
-                                    r, "link", None
-                                ):
-                                    continue
-                            score, label = _score_title(r.title)
-                            all_jobs.append(
-                                Job(
-                                    raw_title=getattr(r, "raw_title", "") or r.title,
-                                    title=r.title,
-                                    company=getattr(r, "company", ""),
-                                    location=getattr(r, "location", ""),
-                                    link=r.link,
-                                    source=adapter.source,
-                                    score=score,
-                                    match=label,
-                                    date=getattr(r, "date", "") or "",
-                                )
-                            )
-                            converted += 1
-
-                        job_logger.info(
-                            f"{adapter.source}: {converted} Roh-Treffer "
-                            f"(query='{query}', loc='{loc}')"
-                        )
+                        converted = _append_rows(adapter.source, rows, query, loc)
+                        if empty_cache_ttl_sec > 0 and converted == 0:
+                            key = _empty_cache_key(source, query, loc, radius_km)
+                            empty_cache_updates[key] = time.time()
 
                         if max_total and len(all_jobs) >= max_total * 2:
                             break
@@ -1130,6 +1339,44 @@ def collect_jobs(
                         )
                 if max_total and len(all_jobs) >= max_total * 2:
                     break
+            if TIMING_ENABLED:
+                adapter_totals[source] = (
+                    adapter_totals.get(source, 0.0)
+                    + (time.perf_counter() - adapter_start)
+                )
+
+        if request_executor:
+            for future in as_completed(request_futures):
+                adapter, query, loc = request_futures[future]
+                try:
+                    source, query, loc, rows, duration = future.result()
+                except Exception as e:
+                    job_logger.warning(
+                        f"Adapter {adapter.source} Fehler "
+                        f"(query='{query}', loc='{loc}'): {e}"
+                    )
+                    continue
+                _handle_request_result(source, query, loc, rows, duration)
+            request_executor.shutdown(wait=True)
+        elif request_tasks:
+            for adapter, query, loc in request_tasks:
+                try:
+                    source, query, loc, rows, duration = _run_request_search(
+                        adapter,
+                        query,
+                        loc,
+                    )
+                except Exception as e:
+                    job_logger.warning(
+                        f"Adapter {adapter.source} Fehler "
+                        f"(query='{query}', loc='{loc}'): {e}"
+                    )
+                    continue
+                _handle_request_result(source, query, loc, rows, duration)
+
+        if TIMING_ENABLED and adapter_totals:
+            for source, seconds in sorted(adapter_totals.items()):
+                _timing_log(f"adapter.{source}", seconds)
 
         if COMPANY_CAREERS_ENABLED and COMPANY_CAREER_URLS:
             try:
@@ -1153,6 +1400,8 @@ def collect_jobs(
     search_locs = locations
     detail_scans = 0
     contact_scans = 0
+    detail_scan_time = 0.0
+    contact_scan_time = 0.0
     transit_enabled = (
         TRANSIT_ENABLED and bool(TRANSIT_ORIGIN) and TRANSIT_MAX_MINUTES > 0
     )
@@ -1240,8 +1489,13 @@ def collect_jobs(
             else:
                 if j.link not in DETAILS_BLOCKLIST_CACHE:
                     detail_scans += 1
+                scan_start = time.perf_counter() if TIMING_ENABLED else 0.0
                 if _detail_page_has_blocked_terms(j.link, BLOCKLIST_TERMS):
+                    if TIMING_ENABLED:
+                        detail_scan_time += time.perf_counter() - scan_start
                     continue
+                if TIMING_ENABLED:
+                    detail_scan_time += time.perf_counter() - scan_start
         seen.add(key)
 
         if (
@@ -1251,7 +1505,10 @@ def collect_jobs(
         ):
             if j.link not in DETAILS_CONTACT_CACHE:
                 contact_scans += 1
+            scan_start = time.perf_counter() if TIMING_ENABLED else 0.0
             email, name = extract_application_contact(j.link)
+            if TIMING_ENABLED:
+                contact_scan_time += time.perf_counter() - scan_start
             if email:
                 j.application_email = email
             if name:
@@ -1278,9 +1535,33 @@ def collect_jobs(
 
         unique.append(j)
 
+    if TIMING_ENABLED:
+        if detail_scans:
+            _timing_log("detail_scan", detail_scan_time, f"count={detail_scans}")
+        if contact_scans:
+            _timing_log("contact_scan", contact_scan_time, f"count={contact_scans}")
+    if empty_cache_ttl_sec > 0:
+        if empty_cache_updates:
+            empty_cache.update(empty_cache_updates)
+        empty_cache = _prune_empty_search_cache(
+            empty_cache,
+            empty_cache_ttl_sec,
+            time.time(),
+        )
+        _save_empty_search_cache(EMPTY_SEARCH_CACHE_PATH, empty_cache)
+        job_logger.info(
+            "empty-cache "
+            f"skip={empty_cache_skips} add={len(empty_cache_updates)} "
+            f"keep={len(empty_cache)}"
+        )
+
     unique.sort(key=lambda x: x.score, reverse=True)
     if max_total:
+        if TIMING_ENABLED:
+            _timing_log("collect_jobs_total", time.perf_counter() - total_start)
         return unique[:max_total]
+    if TIMING_ENABLED:
+        _timing_log("collect_jobs_total", time.perf_counter() - total_start)
     return unique
 
 
