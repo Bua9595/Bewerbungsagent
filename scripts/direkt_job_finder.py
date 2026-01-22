@@ -4,15 +4,21 @@ Fokus: IT-Support/Workplace/Onsite/Rollout + passende Lager/Logistikrollen
 im Raum Bülach/Kloten/Zürich (ÖV ≤ 60 Min.). UTF-8 bereinigt.
 """
 
+import sys
 import webbrowser
 import time
 from datetime import datetime
 import schedule
 import logging
 import os
+from pathlib import Path
 
-from config import config
-from job_query_builder import build_search_urls
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from bewerbungsagent.config import config
+from bewerbungsagent.job_query_builder import build_search_urls
 
 
 class DirectJobFinder:
@@ -39,6 +45,7 @@ class DirectJobFinder:
     # ------------------ Datei-Helfer ------------------
     def save_application_templates(self):
         """Schreibt optimierte Anschreiben-Vorlagen (IT + Logistik) nach UTF-8."""
+        Path(config.TEMPLATES_FILE).parent.mkdir(parents=True, exist_ok=True)
         name = (self.profile.get("name") or "Ihr Name").strip()
         templates = f"""
 {name.upper()} – BEWERBUNGSVORLAGEN
@@ -113,6 +120,7 @@ Mit freundlichen Grüßen
 
     def create_job_tracking_sheet(self):
         """Erstellt Tracking-CSV, falls nicht vorhanden."""
+        Path(config.TRACKING_FILE).parent.mkdir(parents=True, exist_ok=True)
         if os.path.exists(config.TRACKING_FILE):
             return
         header = "Datum,Unternehmen,Position,Portal,Link,Status,Notizen"

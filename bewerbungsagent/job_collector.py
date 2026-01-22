@@ -9,6 +9,7 @@ import csv
 import os
 import re
 import json
+import time
 import unicodedata
 from urllib.parse import urljoin, urlparse
 
@@ -21,10 +22,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-from config import config
-from logger import job_logger
-from job_adapters_ch import JobsChAdapter, JobupAdapter, JobRow as CHJobRow
-from job_adapters_extra import (
+from .config import config
+from .logger import job_logger
+from .job_adapters_ch import JobsChAdapter, JobupAdapter, JobRow as CHJobRow
+from .job_adapters_extra import (
     CareerjetAdapter,
     JoobleAdapter,
     JoraAdapter,
@@ -34,7 +35,8 @@ from job_adapters_extra import (
     MonsterAdapter,
     ExtraJobRow,
 )
-from job_query_builder import build_search_urls
+from .job_query_builder import build_search_urls
+from .job_text_utils import extract_from_multiline_title
 
 
 @dataclass
@@ -129,93 +131,6 @@ def compute_fit(match: str, score: int, min_score_apply: int) -> str:
     return "DECISION"
 
 
-# ---------------------------
-# Normalisierung jobs.ch/jobup Multi-Line-Titel
-# ---------------------------
-
-_COMPANY_HINT_RE = re.compile(
-    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|s\u00e0rl|sarl\.?|ltd|inc|llc)\b",
-    re.IGNORECASE,
-)
-_LABEL_RE = re.compile(
-    r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)",
-    re.IGNORECASE,
-)
-_RELDATE_INLINE_RE = re.compile(
-    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+ (stunden?|tagen|wochen|monaten?))\b",
-    re.IGNORECASE,
-)
-_CITY_HINT_RE = re.compile(
-    r"\b("
-    r"z\u00fcrich|zurich|zuerich|"
-    r"b\u00fclach|buelach|"
-    r"kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|"
-    r"gen\u00e8ve|geneve|"
-    r"schweiz"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
-def _normalize_line(line: str) -> str:
-    line = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", line)
-    return line.strip().strip('"').strip()
-
-
-def _is_noise_line(line: str) -> bool:
-    if not line:
-        return True
-    if _LABEL_RE.search(line):
-        return True
-    if _RELDATE_INLINE_RE.search(line):
-        return True
-    return False
-
-
-def _extract_from_multiline_title(raw_title: str) -> Tuple[str, str, str]:
-    """
-    Robustere Heuristik f\u00fcr jobs.ch/jobup title-Blocks:
-    - title enth\u00e4lt Zeit, Jobtitel, Labels, Ort, Firma.
-    - Wir filtern Labels/relative Zeiten.
-    - Jobtitel = erste non-noise Zeile.
-    - Firma = letzte non-noise Zeile mit Rechtsform-Hint, sonst letzte non-noise Zeile.
-    - Ort = Zeile nach "Arbeitsort:" falls vorhanden, sonst erste non-noise Zeile mit City-Hint.
-    """
-    raw_lines = [_normalize_line(x) for x in (raw_title or "").splitlines()]
-    raw_lines = [x for x in raw_lines if x]
-
-    location = ""
-    for i, line in enumerate(raw_lines):
-        if line.lower().startswith("arbeitsort"):
-            if i + 1 < len(raw_lines):
-                location = _normalize_line(raw_lines[i + 1])
-            break
-
-    clean = [line for line in raw_lines if not _is_noise_line(line)]
-
-    job_title = clean[0] if clean else ""
-    company = ""
-
-    for line in reversed(clean):
-        if _COMPANY_HINT_RE.search(line):
-            company = line
-            break
-
-    if not company and len(clean) >= 2:
-        company = clean[-1]
-        if company == job_title:
-            company = ""
-
-    if not location:
-        for line in clean[1:]:
-            if _CITY_HINT_RE.search(line):
-                location = line
-                break
-
-    if location == company:
-        location = ""
-
-    return job_title, company, location
 
 
 def _normalize_text(value: str) -> str:
@@ -347,6 +262,7 @@ LOCATION_BOOST_KM = int(os.getenv("LOCATION_BOOST_KM", "15") or 15)
 STRICT_LOCATION_FILTER = str(
     os.getenv("STRICT_LOCATION_FILTER", "true")
 ).lower() in TRUTHY
+ADAPTER_REQUEST_DELAY = float(os.getenv("ADAPTER_REQUEST_DELAY", "0") or 0)
 ALLOWED_LOCATION_BOOST = int(os.getenv("ALLOWED_LOCATION_BOOST", "2") or 2)
 ALLOWED_LOCATIONS = {
     x.strip().lower()
@@ -993,7 +909,7 @@ def export_json(rows: List[Job], path: str | None = None) -> None:
         raw_title = j.raw_title
 
         if (not company or not location) and (raw_title or title):
-            t2, c2, l2 = _extract_from_multiline_title(raw_title or title)
+            t2, c2, l2 = extract_from_multiline_title(raw_title or title)
             if t2:
                 title = t2
             if not company and c2:
@@ -1080,6 +996,11 @@ def _normalize_limit(value: int | None) -> int | None:
     return value if value > 0 else None
 
 
+def _adapter_pause() -> None:
+    if ADAPTER_REQUEST_DELAY > 0:
+        time.sleep(ADAPTER_REQUEST_DELAY)
+
+
 def collect_jobs(
     limit_per_site: int | None = None,
     max_total: int | None = None,
@@ -1130,6 +1051,7 @@ def collect_jobs(
             and "indeed" not in BLOCKED_SOURCES
         ):
             try:
+                _adapter_pause()
                 indeed_jobs = _collect_indeed(
                     driver,
                     indeed_url,
@@ -1162,6 +1084,7 @@ def collect_jobs(
             for query in query_terms:
                 for loc in locations:
                     try:
+                        _adapter_pause()
                         rows = adapter.search(
                             driver,
                             query=query,
@@ -1237,7 +1160,7 @@ def collect_jobs(
     for j in all_jobs:
         # Normalize jobs.ch/jobup multi-line titles into fields
         if (not j.company or not j.location) and (j.title or j.raw_title):
-            t2, c2, l2 = _extract_from_multiline_title(j.raw_title or j.title)
+            t2, c2, l2 = extract_from_multiline_title(j.raw_title or j.title)
             if t2:
                 j.title = t2
             if not j.company and c2:
@@ -1365,7 +1288,7 @@ def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:
     out: List[str] = []
     for i, j in enumerate(jobs[:top], 1):
         if (not j.company or not j.location) and ("\n" in (j.raw_title or "") or "Arbeitsort" in (j.raw_title or "")):
-            t2, c2, l2 = _extract_from_multiline_title(j.raw_title)
+            t2, c2, l2 = extract_from_multiline_title(j.raw_title)
             if t2:
                 j.title = t2
             if not j.company and c2:

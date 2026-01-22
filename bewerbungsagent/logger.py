@@ -2,7 +2,7 @@ import logging
 import logging.handlers
 import os
 
-from config import config
+from .config import config
 
 
 class JobFinderLogger:

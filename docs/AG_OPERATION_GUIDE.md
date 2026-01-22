@@ -37,6 +37,9 @@ Die folgenden Variablen sind für den produktiven Betrieb **zwingend**:
 Optional (Detail-Scan):
 - `DETAILS_BLOCKLIST_SCAN=true` scannt Detailseiten nach blockierten Begriffen.
 - `DETAILS_BLOCKLIST_SKIP_DOMAINS=jobrapido.com,...` ueberspringt Detail-Scan fuer blockende Domains.
+Optional (Benachrichtigung/Throttle):
+- `WHATSAPP_ENABLED=true` + `WHATSAPP_TOKEN/PHONE_ID/TO` senden nach `mail-list` eine Kurz-Zusammenfassung.
+- `ADAPTER_REQUEST_DELAY=0.4` setzt eine Pause zwischen Portal-Requests (gilt fuer Selenium + Requests).
 
 ## 3. Routine-Betrieb (Cron / Agent Tasks)
 
@@ -69,7 +72,7 @@ Erstellt DOCX-Anschreiben für alle "passenden" Jobs (Status "OK" oder manuell g
 ```bash
 python tasks.py prepare-applications
 ```
-*Output: Generiert DOCX-Dateien im `out/` Ordner und aktualisiert `bewerbungen_tracking.csv`.*
+*Output: Generiert DOCX-Dateien im `out/` Ordner und aktualisiert `data/bewerbungen_tracking.csv`.*
 
 ### Manuelle / Interaktive Prüfung
 Nur Job-Liste anzeigen (ohne Mail):
@@ -83,7 +86,7 @@ python tasks.py list
 - `generated/job_state.json`: Lifecycle-Status der Jobs (Mailing-Quelle)
 - `generated/job_tracker.xlsx`: Tabelle zum Abhaken (erledigt/aktion)
 - `out/`: Zielordner für generierte Bewerbungen (`.docx`).
-- `bewerbungen_tracking.csv`: Logbuch aller erstellten Bewerbungen.
+- `data/bewerbungen_tracking.csv`: Logbuch aller erstellten Bewerbungen.
 - `logs/`: Logfiles (rotierend).
 
 ## 5. Bekannte Risiken & Hinweise

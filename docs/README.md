@@ -4,12 +4,12 @@ Automatisiert Jobs sammeln -> filtern -> mailen -> Anschreiben erstellen -> Trac
 
 ## Finales Ziel, Stand, Roadmap
 - **AG1 Collector**: jobs.ch/jobup/Indeed + Aggregatoren (jobscout24, jobwinner, careerjet, jobrapido, monster, jora, jooble) scrapen, normalisieren, dedupen, scoren, lokal filtern; `data/jobs.json` schreiben; Mail mit allen neuen lokalen Treffern. **Status:** läuft, Mail-Output korrekt, Hardcut auf Orte aktiv.
-- **AG2 Applicant**: `prepare-applications` liest `data/jobs.json` (fit=="OK"), füllt DOCX-Templates, schreibt `out/`, tracked in `bewerbungen_tracking.csv`. **Status:** läuft; Kopie nach `04_Versendete_Bewerbungen/<Firma>/` noch offen.
-- **AG3 QA/Betrieb**: README/Quickstart, env.example, verify, Scheduler (täglich). **Status:** README aktualisiert; env.example/verify/Scheduler noch offen.
+- **AG2 Applicant**: `prepare-applications` liest `data/jobs.json` (fit=="OK"), füllt DOCX-Templates, schreibt `out/`, tracked in `data/bewerbungen_tracking.csv`. **Status:** läuft; Kopie nach `04_Versendete_Bewerbungen/<Firma>/` via `--mirror-sent`/`archive-sent`.
+- **AG3 QA/Betrieb**: README/Quickstart, env.example, verify, Scheduler (täglich). **Status:** README aktualisiert; env.example/verify erledigt; Scheduler optional.
 
 **Roadmap kurz**  
-1) Kopie jeder versendeten Bewerbung nach `04_Versendete_Bewerbungen/<Firma>/...`.  
-2) env.example vervollständigen, leichtes verify-Script/Task, Scheduler für `mail-list` täglich.  
+1) Kopie jeder versendeten Bewerbung nach `04_Versendete_Bewerbungen/<Firma>/...` (erledigt).  
+2) Scheduler für `mail-list` täglich (optional).  
 3) Optional: feinere Pendelzeit-/PLZ-Filter.
 
 ## Quickstart (Windows / PowerShell)
@@ -36,7 +36,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)
 - `python tasks.py mark-ignored <job_uid> [--url <link>]` - markiert Job als ignoriert (stoppt Erinnerungen)
 - `python tasks.py list` – sammelt und gibt Textliste + CSV aus
-- `python tasks.py prepare-applications [--force-all] [--mirror-sent] [--copy-sent-dir <pfad>]` – erzeugt Anschreiben aus `data/jobs.json` (fit=="OK") in `out/`, tracked in `bewerbungen_tracking.csv`; optional Kopie in `04_Versendete_Bewerbungen/<Firma>/`
+- `python tasks.py prepare-applications [--force-all] [--mirror-sent] [--copy-sent-dir <pfad>]` - erzeugt Anschreiben aus `data/jobs.json` (fit=="OK") in `out/`, tracked in `data/bewerbungen_tracking.csv`; optional Kopie in `04_Versendete_Bewerbungen/<Firma>/`
 - `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` – manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
 - `python tasks.py gen-templates` – aktualisiert Templates/Tracker-Header
 - `python tasks.py email-test` – SMTP-Test
@@ -73,7 +73,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `generated/job_tracker.xlsx` - Tabelle zum Abhaken/Notizen (erledigt/aktion)
 - `Anschreiben_Templates/` - Templates (`T1_ITSup.docx`, `T2_Systemtechnik.docx`, `T3_Logistik.docx`)
 - `out/` - generierte Anschreiben
-- `bewerbungen_tracking.csv` - Tracker (wird bei Bedarf angelegt/erweitert)
+- `data/bewerbungen_tracking.csv` - Tracker (wird bei Bedarf angelegt/erweitert)
 - `04_Versendete_Bewerbungen/` - Ziel fuer Kopien nach Versand (wird bei `--mirror-sent` genutzt, sonst manuell)
 
 ## Troubleshooting
@@ -101,7 +101,8 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `BLACKLIST_KEYWORDS=junior` - Titel-Keywords zum Ausschluss
 - `INCLUDE_KEYWORDS=it,helpdesk,service desk,...` - Optionaler Include-Filter (erzwingt IT-bezogene Treffer)
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch,jobscout24,jobwinner,careerjet,jobrapido,monster,jora,jooble` - Komma-Liste; leer = alle aktiv
-- WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO`
+- WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO` (bei Aktivierung wird nach `mail-list` eine Kurz-Zusammenfassung gesendet)
+- `ADAPTER_REQUEST_DELAY=0.4` - Pause zwischen Portal-Requests (gilt für Selenium + Requests)
 - `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow
 - `HARD_ALLOWED_LOCATIONS=Zuerich Oerlikon,...` - harter Orts-Allow unabhaengig vom Strict-Filter
 - `COMMUTE_MINUTES=Zuerich Oerlikon:17,...` - OeV-Minuten je Ort (fuer UI-Farbmarkierung + Score-Penalty)

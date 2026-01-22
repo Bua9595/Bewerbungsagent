@@ -9,7 +9,7 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
-from job_state import (
+from .job_state import (
     STATUS_APPLIED,
     STATUS_CLOSED,
     STATUS_IGNORED,

@@ -7,12 +7,14 @@ Gibt IMMER (success: bool, output_lines: list[str]) zurück.
 import os
 import sys
 import smtplib
+from pathlib import Path
 
-# Projektpfad einhängen
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-from config import config
-from email_automation import EmailAutomation
+from bewerbungsagent.config import config
+from bewerbungsagent.email_automation import EmailAutomation
 
 
 def test_config():

@@ -4,7 +4,7 @@
 - [x] Plan erstellt und bestätigt
 - [x] Abhängigkeiten installieren (selenium, schedule, webdriver-manager) - bereits installiert
 - [x] Konfigurationseinstellungen hinzufügen (config.py erstellen mit API-Key, E-Mail, Intervallen)
-- [x] Grundlegende Job-Suche implementiert (direkt_job_finder.py)
+- [x] Grundlegende Job-Suche implementiert (`scripts/direkt_job_finder.py`)
 - [x] Bewerbungsvorlagen erstellen
 - [x] Tracking-System grundlegend implementiert
 
@@ -53,9 +53,9 @@
 - Umgebung: `python -m venv .venv` und dann `.venv\Scripts\Activate.ps1`
 - Abhängigkeiten: `pip install -r requirements.txt`
 - .env prüfen (SMTP, E-Mail): `SENDER_EMAIL`, `SENDER_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`, `RECIPIENT_EMAILS`
-- Schnellcheck ohne Netzwerk: `python quick_check.py` (legt Vorlagen/Tracking an)
-- E-Mail-Test: `python test_email_config.py` (verbindet mit SMTP)
-- Interaktiv starten: `python direkt_job_finder.py`
+- Schnellcheck ohne Netzwerk: `python scripts/quick_check.py` (legt Vorlagen/Tracking an)
+- E-Mail-Test: `python scripts/test_email_config.py` (verbindet mit SMTP)
+- Interaktiv starten: `python scripts/direkt_job_finder.py`
 
 ## SMTP-Hinweise
 - Gmail: `SMTP_SERVER=smtp.gmail.com`, `SMTP_PORT=587`, nutze ein App‑Passwort (2FA empfohlen).

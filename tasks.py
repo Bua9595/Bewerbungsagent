@@ -35,6 +35,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 
+from bewerbungsagent.job_text_utils import extract_from_multiline_title
+
 AGGREGATOR_SOURCES = {"careerjet", "jobrapido", "jooble"}
 
 
@@ -74,7 +76,7 @@ def _lock_is_stale(lock_path: Path, ttl_min: int) -> bool:
     if not started_raw:
         return True
     try:
-        from job_state import parse_ts
+        from bewerbungsagent.job_state import parse_ts
 
         started = parse_ts(started_raw)
     except Exception:
@@ -106,7 +108,7 @@ def _acquire_run_lock(lock_path: Path, ttl_min: int, logger=None) -> bool:
         if logger:
             logger.info(f"Stale Run-Lock entfernt: {lock_path}")
     try:
-        from job_state import now_iso
+        from bewerbungsagent.job_state import now_iso
 
         payload = {
             "pid": os.getpid(),
@@ -134,7 +136,7 @@ def _acquire_run_lock(lock_path: Path, ttl_min: int, logger=None) -> bool:
 
 
 def cmd_env_check(_args=None):
-    from config import config
+    from bewerbungsagent.config import config
     print("=== ENV/Cfg ===")
     print("Sender:", config.SENDER_EMAIL or "<leer>")
     print("SMTP:", config.SMTP_SERVER or "<leer>", config.SMTP_PORT)
@@ -155,7 +157,7 @@ def cmd_env_check(_args=None):
 
 
 def cmd_gen_templates(_args=None):
-    from direkt_job_finder import DirectJobFinder
+    from scripts.direkt_job_finder import DirectJobFinder
     app = DirectJobFinder()
     app.save_application_templates()
     app.create_job_tracking_sheet()
@@ -163,12 +165,12 @@ def cmd_gen_templates(_args=None):
 
 
 def cmd_start(_args=None):
-    from direkt_job_finder import DirectJobFinder
+    from scripts.direkt_job_finder import DirectJobFinder
     DirectJobFinder().run_complete_job_hunt()
 
 
 def cmd_open(_args=None):
-    from direkt_job_finder import DirectJobFinder
+    from scripts.direkt_job_finder import DirectJobFinder
     DirectJobFinder().open_job_portals_automatically()
 
 
@@ -184,7 +186,7 @@ def cmd_email_test(_args=None):
 
 
 def cmd_list(_args=None):
-    from job_collector import collect_jobs, export_csv, export_json
+    from bewerbungsagent.job_collector import collect_jobs, export_csv, export_json
     jobs = collect_jobs()
     if not jobs:
         print("Keine Treffer. CSV/Mail übersprungen.")
@@ -195,9 +197,7 @@ def cmd_list(_args=None):
         company = j.company
         location = j.location
         if (not company or not location) and (j.raw_title or j.title):
-            from job_collector import _extract_from_multiline_title
-
-            t2, c2, l2 = _extract_from_multiline_title(j.raw_title or j.title)
+            t2, c2, l2 = extract_from_multiline_title(j.raw_title or j.title)
             if t2:
                 j.title = t2
             if not company and c2:
@@ -217,9 +217,9 @@ def cmd_mail_list(args=None):
     Neue Jobs plus Erinnerungen fuer offene Jobs.
     """
     try:
-        from job_collector import collect_jobs, export_json
-        from email_automation import email_automation
-        from job_state import (
+        from bewerbungsagent.job_collector import collect_jobs, export_json
+        from bewerbungsagent.email_automation import email_automation
+        from bewerbungsagent.job_state import (
             OPEN_STATUSES,
             TERMINAL_STATUSES,
             STATUS_APPLIED,
@@ -235,13 +235,13 @@ def cmd_mail_list(args=None):
             save_state,
             should_send_reminder,
         )
-        from job_tracker import (
+        from bewerbungsagent.job_tracker import (
             apply_tracker_marks,
             get_tracker_path,
             load_tracker,
             write_tracker,
         )
-        from logger import job_logger
+        from bewerbungsagent.logger import job_logger
     except Exception as e:
         print(f"Mail-Liste Fehler: {e}")
         return
@@ -590,8 +590,8 @@ def cmd_mail_list(args=None):
     _release_run_lock(lock_path)
 
 def cmd_tracker_sync(_args=None):
-    from job_state import load_state, save_state, STATUS_CLOSED, TERMINAL_STATUSES
-    from job_tracker import (
+    from bewerbungsagent.job_state import load_state, save_state, STATUS_CLOSED, TERMINAL_STATUSES
+    from bewerbungsagent.job_tracker import (
         apply_tracker_marks,
         get_tracker_path,
         load_tracker,
@@ -622,7 +622,7 @@ def cmd_tracker_sync(_args=None):
 
 
 def cmd_tracker_ui(args):
-    from tracker_ui import run_tracker_ui
+    from bewerbungsagent.tracker_ui import run_tracker_ui
 
     run_tracker_ui(
         host=getattr(args, "host", "127.0.0.1"),
@@ -632,7 +632,7 @@ def cmd_tracker_ui(args):
 
 
 def _resolve_job_uid(state, job_uid, url):
-    from job_state import canonicalize_url
+    from bewerbungsagent.job_state import canonicalize_url
 
     if job_uid:
         matches = [uid for uid in state.keys() if uid.startswith(job_uid)]
@@ -673,7 +673,7 @@ def _resolve_job_uid(state, job_uid, url):
 
 
 def _mark_job_state(args, status):
-    from job_state import load_state, save_state
+    from bewerbungsagent.job_state import load_state, save_state
 
     state = load_state()
     if not state:
@@ -693,7 +693,7 @@ def _mark_job_state(args, status):
     record["status"] = status
     save_state(state)
     try:
-        from job_tracker import get_tracker_path, load_tracker, write_tracker
+        from bewerbungsagent.job_tracker import get_tracker_path, load_tracker, write_tracker
 
         tracker_path = get_tracker_path()
         tracker_rows = load_tracker(tracker_path)
@@ -707,13 +707,13 @@ def _mark_job_state(args, status):
 
 
 def cmd_mark_applied(args):
-    from job_state import STATUS_APPLIED
+    from bewerbungsagent.job_state import STATUS_APPLIED
 
     _mark_job_state(args, STATUS_APPLIED)
 
 
 def cmd_mark_ignored(args):
-    from job_state import STATUS_IGNORED
+    from bewerbungsagent.job_state import STATUS_IGNORED
 
     _mark_job_state(args, STATUS_IGNORED)
 
@@ -751,7 +751,7 @@ def cmd_verify(_args=None):
     """
     ok = True
     try:
-        from config import config
+        from bewerbungsagent.config import config
         config.validate_config()
         print("Config: OK")
     except Exception as e:
@@ -785,108 +785,11 @@ def cmd_verify(_args=None):
         print("Verify: FEHLER")
 
 
-# ---------------------------
-# prepare-applications LOGIK
-# ---------------------------
-
-_COMPANY_HINT_RE = re.compile(
-    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|s\u00e0rl|sarl\.?|ltd|inc|llc)\b",
-    re.IGNORECASE,
-)
-
-_LABEL_RE = re.compile(
-    r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)",
-    re.IGNORECASE,
-)
-
-_RELDATE_INLINE_RE = re.compile(
-    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+ (stunden?|tagen|wochen|monaten?))\b",
-    re.IGNORECASE,
-)
-
-_CITY_HINT_RE = re.compile(
-    r"\b("
-    r"z\u00fcrich|zurich|zuerich|"
-    r"b\u00fclach|buelach|"
-    r"kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|"
-    r"gen\u00e8ve|geneve|"
-    r"schweiz"
-    r")\b",
-    re.IGNORECASE,
-)
-
-
 def _sanitize_filename(s: str) -> str:
     s = s.strip()
     s = re.sub(r"[\\/:*?\"<>|]", "_", s)
     s = re.sub(r"\s+", " ", s)
     return s[:120] if len(s) > 120 else s
-
-
-def _normalize_line(line: str) -> str:
-    # entfernt z.B. '01. [exact]' am Zeilenanfang
-    line = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", line)
-    return line.strip().strip('"').strip()
-
-
-def _is_noise_line(line: str) -> bool:
-    if not line:
-        return True
-    if _LABEL_RE.search(line):
-        return True
-    if _RELDATE_INLINE_RE.search(line):
-        return True
-    return False
-
-
-def _extract_from_multiline_title(raw_title: str):
-    """
-    Robustere Heuristik für jobs.json title:
-    - title enthält oft Sammeltext: Zeit, Jobtitel, Labels, Ort, Firma.
-    - Wir filtern Labels/relative Zeiten auch wenn inline.
-    - Jobtitel = erste non-noise Zeile.
-    - Firma = letzte non-noise Zeile mit Rechtsform (AG/GmbH/SA/...) sonst letzte non-noise Zeile.
-    - Ort = Zeile nach "Arbeitsort:" falls vorhanden, sonst erste non-noise Zeile mit City-Hint.
-    """
-    raw_lines = [_normalize_line(x) for x in (raw_title or "").splitlines()]
-    raw_lines = [x for x in raw_lines if x]
-
-    # location: explizit nach "Arbeitsort"
-    location = ""
-    for i, line in enumerate(raw_lines):
-        if line.lower().startswith("arbeitsort"):
-            if i + 1 < len(raw_lines):
-                location = _normalize_line(raw_lines[i + 1])
-            break
-
-    clean = [line for line in raw_lines if not _is_noise_line(line)]
-
-    job_title = clean[0] if clean else ""
-    company = ""
-
-    # Firma: letzte Zeile mit Rechtsform-Hint
-    for line in reversed(clean):
-        if _COMPANY_HINT_RE.search(line):
-            company = line
-            break
-
-    # fallback: letzte clean Zeile (wenn nicht schon job_title)
-    if not company and len(clean) >= 2:
-        company = clean[-1]
-        if company == job_title:
-            company = ""
-
-    # fallback location via city hint
-    if not location:
-        for line in clean[1:]:
-            if _CITY_HINT_RE.search(line):
-                location = line
-                break
-
-    if location == company:
-        location = ""
-
-    return job_title, company, location
 
 
 def _select_template(title: str, templates_dir: Path) -> Path:
@@ -942,7 +845,7 @@ def _send_mail_with_attachments(to_addr, subject, body_text, attachments):
     Versendet eine E-Mail mit Anhängen via SMTP.
     attachments: Liste von Pfaden (Path-Objekte oder Strings).
     """
-    from config import config
+    from bewerbungsagent.config import config
 
     msg = MIMEMultipart()
     msg["From"] = config.SENDER_EMAIL
@@ -1029,7 +932,7 @@ def cmd_send_applications(args):
     tracker_path = (
         Path(args.tracker)
         if args.tracker
-        else (proj / "bewerbungen_tracking.csv")
+        else (proj / "data" / "bewerbungen_tracking.csv")
     )
 
     # Anhänge (statisch)
@@ -1098,11 +1001,11 @@ Florian Bujupi
         print(f"Sende an {to_addr} ({company})...")
         if args.dry_run:
             print("  [DRY RUN] Mail wäre gesendet worden.")
-            success = True
-        else:
-            success = _send_mail_with_attachments(
-                to_addr, subject, body, attachments
-            )
+            sent_count += 1
+            continue
+        success = _send_mail_with_attachments(
+            to_addr, subject, body, attachments
+        )
 
         if success:
             sent_count += 1
@@ -1111,7 +1014,7 @@ Florian Bujupi
                 argparse.Namespace(file=str(docx_path), company=company, dest="")
             )
             try:
-                from job_state import (
+                from bewerbungsagent.job_state import (
                     STATUS_APPLIED,
                     build_job_uid,
                     canonicalize_url,
@@ -1151,7 +1054,7 @@ Florian Bujupi
                 state[job_uid] = record
                 save_state(state)
                 try:
-                    from job_tracker import (
+                    from bewerbungsagent.job_tracker import (
                         get_tracker_path,
                         load_tracker,
                         write_tracker,
@@ -1179,7 +1082,7 @@ def cmd_prepare_applications(args):
     wendet .docx Templates an, schreibt out/*.docx und
     hängt neue Zeilen an bewerbungen_tracking.csv.
     """
-    from job_collector import compute_fit
+    from bewerbungsagent.job_collector import compute_fit
     auto_fit = str(os.getenv("AUTO_FIT_ENABLED", "false")).lower() in {
         "1",
         "true",
@@ -1203,7 +1106,7 @@ def cmd_prepare_applications(args):
     tracker_path = (
         Path(args.tracker)
         if args.tracker
-        else (proj / "bewerbungen_tracking.csv")
+        else (proj / "data" / "bewerbungen_tracking.csv")
     )
 
     if not in_path.exists():
@@ -1254,7 +1157,7 @@ def cmd_prepare_applications(args):
         location = job.get("location") or ""
 
         if (not job_title) or (not company):
-            t2, c2, l2 = _extract_from_multiline_title(raw_title)
+            t2, c2, l2 = extract_from_multiline_title(raw_title)
             if not job_title and t2:
                 job_title = t2
             if not company and c2:
@@ -1273,7 +1176,7 @@ def cmd_prepare_applications(args):
         template_path = _select_template(job_title, templates_dir)
         if not template_path.exists():
             print(f"FEHLER: Template fehlt: {template_path}")
-        continue
+            continue
 
         doc = Document(str(template_path))
 

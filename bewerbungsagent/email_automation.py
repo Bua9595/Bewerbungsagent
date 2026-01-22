@@ -5,111 +5,14 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import os
-import re
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
-from config import config
-from logger import job_logger
-
-
-# ---------------------------
-# Helper: Multiline title parsing (wie in tasks.py)
-# ---------------------------
-
-_COMPANY_HINT_RE = re.compile(
-    r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|s\u00e0rl|sarl\.?|ltd|inc|llc)\b",
-    re.IGNORECASE,
-)
-
-_LABEL_RE = re.compile(
-    r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)",
-    re.IGNORECASE,
-)
-
-_RELDATE_INLINE_RE = re.compile(
-    r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+\s*(tagen|wochen|monaten?))\b",
-    re.IGNORECASE,
-)
-
-_CITY_HINT_RE = re.compile(
-    r"\b("
-    r"z\u00fcrich|zurich|zuerich|"
-    r"b\u00fclach|buelach|"
-    r"kloten|winterthur|baden|zug|aarau|basel|bern|luzern|thun|"
-    r"gen\u00e8ve|geneve|"
-    r"schweiz"
-    r")\b",
-    re.IGNORECASE,
-)
+from .config import config
+from .logger import job_logger
+from .job_text_utils import extract_from_multiline_title
 
 
-def _normalize_line(line: str) -> str:
-    # entfernt z.B. '01. [exact]' am Zeilenanfang
-    line = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", line)
-    return line.strip().strip('"').strip()
-
-
-def _is_noise_line(line: str) -> bool:
-    if not line:
-        return True
-    if _LABEL_RE.search(line):
-        return True
-    if re.match(r"^ref[:\s]", line, re.IGNORECASE):
-        return True
-    if _RELDATE_INLINE_RE.search(line):
-        return True
-    return False
-
-
-def _extract_from_multiline_title(raw_title: str) -> Tuple[str, str, str]:
-    """
-    Robustere Heuristik:
-    - title enthaelt oft: Zeit, Jobtitel, Labels, Ort, Firma.
-    - Filtert Labels/relative Zeiten (auch inline).
-    - Jobtitel = erste non-noise Zeile.
-    - Firma = letzte non-noise Zeile mit Rechtsform-Hint, sonst letzte non-noise Zeile.
-    - Ort = Zeile nach "Arbeitsort:" falls vorhanden, sonst erste non-noise Zeile mit City-Hint.
-    """
-    raw_lines = [_normalize_line(x) for x in (raw_title or "").splitlines()]
-    raw_lines = [x for x in raw_lines if x]
-
-    # location: explizit nach "Arbeitsort"
-    location = ""
-    for i, line in enumerate(raw_lines):
-        if line.lower().startswith("arbeitsort"):
-            if i + 1 < len(raw_lines):
-                location = _normalize_line(raw_lines[i + 1])
-            break
-
-    clean = [line for line in raw_lines if not _is_noise_line(line)]
-
-    job_title = clean[0] if clean else ""
-    company = ""
-
-    # Firma: letzte Zeile mit Rechtsform-Hint
-    for line in reversed(clean):
-        if _COMPANY_HINT_RE.search(line):
-            company = line
-            break
-
-    # fallback: letzte clean Zeile (wenn nicht schon job_title)
-    if not company and len(clean) >= 2:
-        company = clean[-1]
-        if company == job_title:
-            company = ""
-
-    # fallback location via city hint
-    if not location:
-        for line in clean[1:]:
-            if _CITY_HINT_RE.search(line):
-                location = line
-                break
-
-    if location == company:
-        location = ""
-
-    return job_title, company, location
 
 
 def _job_to_dict(job: Any) -> Dict[str, Any]:
@@ -189,7 +92,7 @@ def _normalize_job(job: Any) -> Dict[str, Any]:
         or (not location)
     )
     if needs_parse and raw_title:
-        t2, c2, l2 = _extract_from_multiline_title(raw_title)
+        t2, c2, l2 = extract_from_multiline_title(raw_title)
         if not job_title and t2:
             job_title = t2
         if not company and c2:
@@ -239,7 +142,9 @@ class EmailAutomation:
         )
         body = self._create_job_alert_body(new_jobs, reminder_jobs)
 
-        return self._send_email(subject, body)
+        sent = self._send_email(subject, body)
+        self._send_whatsapp_summary(new_jobs, reminder_jobs)
+        return sent
 
     def send_weekly_summary(self, stats):
         """Send weekly summary of job search activities."""
@@ -429,6 +334,25 @@ class EmailAutomation:
         except Exception as e:
             job_logger.error(f"Failed to send email: {subject} - Error: {str(e)}")
             return False
+
+    def _send_whatsapp_summary(self, new_jobs, reminder_jobs) -> None:
+        try:
+            from .notifier_whatsapp import send_whatsapp
+        except Exception as e:
+            job_logger.warning(f"WhatsApp init fehlgeschlagen: {e}")
+            return
+
+        summary = f"Job-Alert: {len(new_jobs)} neu, {len(reminder_jobs)} offen"
+        lines = [summary]
+        for job in (new_jobs or [])[:3]:
+            data = _normalize_job(job)
+            lines.append(
+                f"- {data['job_title']} @ {data['company']} ({data['location']})"
+            )
+        try:
+            send_whatsapp("\n".join(lines))
+        except Exception as e:
+            job_logger.warning(f"WhatsApp Versand fehlgeschlagen: {e}")
 
 
 # Global email instance

@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 from urllib.parse import parse_qs, urlparse
 import webbrowser
 
-from job_state import (
+from .job_state import (
     STATUS_APPLIED,
     STATUS_CLOSED,
     STATUS_IGNORED,
@@ -22,7 +22,7 @@ from job_state import (
     parse_ts,
     save_state,
 )
-from job_tracker import get_tracker_path, load_tracker, write_tracker
+from .job_tracker import get_tracker_path, load_tracker, write_tracker
 
 ROOT_DIR = Path.cwd().resolve()
 ALLOWED_DOC_DIRS = [
