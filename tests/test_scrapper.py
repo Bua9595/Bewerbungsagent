@@ -9,8 +9,19 @@ python test_scrapper.py
 """
 
 import os
+import sys
+from pathlib import Path
 
-import pytest
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+try:
+    import pytest
+except ImportError as exc:
+    raise SystemExit(
+        "pytest not installed. Run: pip install -r requirements-dev.txt"
+    ) from exc
 
 
 def test_selenium_smoke() -> None:
