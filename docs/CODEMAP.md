@@ -4,7 +4,7 @@ Kurze Uebersicht der wichtigsten Python-Dateien und wofuer Agenten sie brauchen.
 
 - `tasks.py` - CLI-Entry (Parser + Dispatch) fuer `mail-list`, `tracker-ui`, `mark-*`, `prepare-applications`, `send-applications`.
 - `tools/commands/` - CLI-Command-Implementierungen (aus tasks.py ausgelagert).
-- `bewerbungsagent/job_collector.py` - Kern-Scraper/Collector; sammelt Jobs, filtert, scored, exportiert `jobs.json`/CSV.
+- `bewerbungsagent/job_collector.py` - Kern-Scraper/Collector; sammelt Jobs, filtert, scored, exportiert `jobs.json`/CSV; Selenium kann per Multiprocessing parallel laufen, Requests-Adapter per Threadpool.
 - `bewerbungsagent/job_adapters_ch.py` - Portal-spezifische Scraper fuer jobs.ch/jobup.ch inkl. Detail-Parsing.
 - `bewerbungsagent/job_adapters_extra.py` - Adapter fuer weitere Jobportale (z.B. jobscout24, jobwinner, careerjet, jobrapido, monster, jora, jooble).
 - `bewerbungsagent/job_state.py` - Lifecycle-State Store (job_state.json), UID-Building, Reminder-Logik.

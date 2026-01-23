@@ -13,7 +13,7 @@ import json
 import time
 import threading
 import unicodedata
-import math
+import multiprocessing as mp
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -291,6 +291,83 @@ def _batch_terms(terms: List[str], batch_size: int, joiner: str) -> List[str]:
     return out
 
 
+def _split_tasks(tasks: List[tuple], workers: int) -> List[List[tuple]]:
+    if workers <= 1 or not tasks:
+        return [tasks]
+    chunks: List[List[tuple]] = [[] for _ in range(workers)]
+    for idx, task in enumerate(tasks):
+        chunks[idx % workers].append(task)
+    return [chunk for chunk in chunks if chunk]
+
+
+def _selenium_worker(
+    tasks: List[tuple[str, str, str]],
+    radius_km: int,
+    limit_per_site: int | None,
+    headless: bool,
+) -> dict:
+    adapter_map = {
+        "jobs.ch": JobsChAdapter,
+        "jobup.ch": JobupAdapter,
+    }
+    driver = _mk_driver(headless=headless)
+    results: list[dict] = []
+    errors: list[str] = []
+    try:
+        adapters: dict[str, object] = {}
+        for source, query, loc in tasks:
+            adapter = adapters.get(source)
+            if adapter is None:
+                cls = adapter_map.get(source)
+                if cls is None:
+                    errors.append(f"unknown adapter '{source}'")
+                    continue
+                adapter = cls()
+                adapters[source] = adapter
+            started = time.perf_counter()
+            try:
+                _adapter_pause()
+                rows = adapter.search(
+                    driver,
+                    query=query,
+                    location=loc,
+                    radius_km=radius_km,
+                    limit=limit_per_site,
+                )
+            except Exception as exc:
+                errors.append(f"{source} (query='{query}', loc='{loc}'): {exc}")
+                continue
+            duration = time.perf_counter() - started
+            payload_rows: list[dict] = []
+            for row in rows:
+                payload_rows.append(
+                    {
+                        "title": getattr(row, "title", "") or "",
+                        "raw_title": getattr(row, "raw_title", "") or "",
+                        "company": getattr(row, "company", "") or "",
+                        "location": getattr(row, "location", "") or "",
+                        "link": getattr(row, "link", "") or "",
+                        "date": getattr(row, "date", "") or "",
+                        "source": getattr(row, "source", source) or source,
+                    }
+                )
+            results.append(
+                {
+                    "source": source,
+                    "query": query,
+                    "loc": loc,
+                    "rows": payload_rows,
+                    "duration": duration,
+                }
+            )
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+    return {"results": results, "errors": errors}
+
+
 def _empty_cache_key(source: str, query: str, location: str, radius_km: int) -> str:
     src = (source or "").strip().lower()
     q = _normalize_text(query or "")
@@ -343,6 +420,7 @@ STRICT_LOCATION_FILTER = str(
     os.getenv("STRICT_LOCATION_FILTER", "true")
 ).lower() in TRUTHY
 ADAPTER_REQUEST_DELAY = float(os.getenv("ADAPTER_REQUEST_DELAY", "0") or 0)
+SELENIUM_WORKERS = int(os.getenv("SELENIUM_WORKERS", "1") or 1)
 REQUESTS_ADAPTER_WORKERS = int(os.getenv("REQUESTS_ADAPTER_WORKERS", "6") or 6)
 REQUESTS_ADAPTER_TIMEOUT = float(os.getenv("REQUESTS_ADAPTER_TIMEOUT", "15") or 15)
 EMPTY_SEARCH_TTL_HOURS = float(os.getenv("EMPTY_SEARCH_TTL_HOURS", "0") or 0)
@@ -350,7 +428,6 @@ EMPTY_SEARCH_CACHE_PATH = Path(
     os.getenv("EMPTY_SEARCH_CACHE_PATH", "generated/empty_search_cache.json")
 )
 TIMING_ENABLED = str(os.getenv("TIMING_ENABLED", "false")).lower() in TRUTHY
-SELENIUM_WORKERS = int(os.getenv("SELENIUM_WORKERS", "1") or 1)
 SELENIUM_WORKERS_RECOMMENDED_MAX = 3
 ALLOWED_LOCATION_BOOST = int(os.getenv("ALLOWED_LOCATION_BOOST", "2") or 2)
 ALLOWED_LOCATIONS = {
@@ -1133,49 +1210,6 @@ def _timing_log(label: str, seconds: float, extra: str = "") -> None:
     suffix = f" {extra}" if extra else ""
     job_logger.info(f"timing {label}={seconds:.2f}s{suffix}")
 
-def _chunked(items: list, size: int) -> list[list]:
-    if size <= 0:
-        return [items]
-    return [items[i : i + size] for i in range(0, len(items), size)]
-
-
-def _run_selenium_worker(task_batch: list[tuple[str, str, str, int]], headless: bool, limit_per_site: int | None):
-    from .job_adapters_ch import JobsChAdapter, JobupAdapter
-
-    adapter_map = {
-        "jobs.ch": JobsChAdapter(),
-        "jobup.ch": JobupAdapter(),
-    }
-    logs: list[tuple[str, str, str, int, str]] = []
-    rows: list = []
-
-    driver = _mk_driver(headless=headless)
-    try:
-        for source, query, location, radius_km in task_batch:
-            adapter = adapter_map.get(source)
-            if not adapter:
-                continue
-            try:
-                _adapter_pause()
-                result = adapter.search(
-                    driver,
-                    query=query,
-                    location=location,
-                    radius_km=radius_km,
-                    limit=limit_per_site,
-                )
-                logs.append((source, query, location, len(result), ""))
-                rows.extend(result)
-            except Exception as exc:
-                logs.append((source, query, location, 0, str(exc)))
-    finally:
-        try:
-            driver.quit()
-        except Exception:
-            pass
-
-    return logs, rows
-
 
 def collect_jobs(
     limit_per_site: int | None = None,
@@ -1288,6 +1322,32 @@ def collect_jobs(
             JoraAdapter(),
             JoobleAdapter(),
         ]
+        source_counts: dict[str, int] = {}
+        known_sources = {
+            "indeed",
+            "jobs.ch",
+            "jobup.ch",
+            "jobscout24",
+            "jobwinner",
+            "careerjet",
+            "jobrapido",
+            "monster",
+            "jora",
+            "jooble",
+        }
+        if ENABLED_SOURCES:
+            unknown = ENABLED_SOURCES - known_sources
+            if unknown:
+                job_logger.warning(
+                    "ENABLED_SOURCES ohne Adapter: %s",
+                    ", ".join(sorted(unknown)),
+                )
+            blocked = ENABLED_SOURCES & BLOCKED_SOURCES
+            if blocked:
+                job_logger.info(
+                    "ENABLED_SOURCES blockiert: %s",
+                    ", ".join(sorted(blocked)),
+                )
 
         def _allowed(adapter) -> bool:
             source = adapter.source.lower()
@@ -1299,6 +1359,14 @@ def collect_jobs(
 
         selenium_adapters = [a for a in selenium_adapters if _allowed(a)]
         request_adapters = [a for a in request_adapters if _allowed(a)]
+        if not selenium_adapters:
+            job_logger.warning(
+                "Keine Selenium-Adapter aktiv (ENABLED_SOURCES/BLOCKED_SOURCES prüfen)."
+            )
+        if not request_adapters:
+            job_logger.warning(
+                "Keine Request-Adapter aktiv (ENABLED_SOURCES/BLOCKED_SOURCES prüfen)."
+            )
 
         request_tasks: list[tuple[object, str, str]] = []
         request_futures: dict = {}
@@ -1335,21 +1403,40 @@ def collect_jobs(
         ) -> int:
             converted = 0
             for r in rows:
-                if not isinstance(r, (CHJobRow, ExtraJobRow)):
-                    if not getattr(r, "title", None) or not getattr(r, "link", None):
+                if isinstance(r, dict):
+                    title = r.get("title") or ""
+                    link = r.get("link") or ""
+                    if not title or not link:
                         continue
-                score, label = _score_title(r.title)
+                    raw_title = r.get("raw_title") or title
+                    company = r.get("company") or ""
+                    location = r.get("location") or ""
+                    date = r.get("date") or ""
+                else:
+                    if not isinstance(r, (CHJobRow, ExtraJobRow)):
+                        if not getattr(r, "title", None) or not getattr(
+                            r, "link", None
+                        ):
+                            continue
+                    title = r.title
+                    link = r.link
+                    raw_title = getattr(r, "raw_title", "") or title
+                    company = getattr(r, "company", "")
+                    location = getattr(r, "location", "")
+                    date = getattr(r, "date", "") or ""
+
+                score, label = _score_title(title)
                 all_jobs.append(
                     Job(
-                        raw_title=getattr(r, "raw_title", "") or r.title,
-                        title=r.title,
-                        company=getattr(r, "company", ""),
-                        location=getattr(r, "location", ""),
-                        link=r.link,
+                        raw_title=raw_title,
+                        title=title,
+                        company=company,
+                        location=location,
+                        link=link,
                         source=adapter_source,
                         score=score,
                         match=label,
-                        date=getattr(r, "date", "") or "",
+                        date=date,
                     )
                 )
                 converted += 1
@@ -1359,6 +1446,9 @@ def collect_jobs(
             job_logger.info(
                 f"{adapter_source}: {converted} Roh-Treffer "
                 f"(query='{query}', loc='{loc}')"
+            )
+            source_counts[adapter_source] = (
+                source_counts.get(adapter_source, 0) + converted
             )
             return converted
 
@@ -1417,9 +1507,21 @@ def collect_jobs(
                 SELENIUM_WORKERS_RECOMMENDED_MAX,
             )
 
-        # Selenium-Adapter: optional parallelisieren.
+        # Selenium-Adapter: optional parallelisieren (multiprocessing).
         if selenium_adapters:
-            if selenium_workers > 1:
+            selenium_tasks: list[tuple[str, str, str]] = []
+            for adapter in selenium_adapters:
+                source = adapter.source.lower()
+                for query in query_terms:
+                    for loc in locations:
+                        if empty_cache_ttl_sec > 0:
+                            key = _empty_cache_key(source, query, loc, radius_km)
+                            if key in empty_cache:
+                                empty_cache_skips += 1
+                                continue
+                        selenium_tasks.append((source, query, loc))
+
+            if selenium_tasks and selenium_workers > 1:
                 if driver is not None:
                     try:
                         driver.quit()
@@ -1427,74 +1529,56 @@ def collect_jobs(
                         pass
                     driver = None
 
-                tasks: list[tuple[str, str, str, int]] = []
-                for adapter in selenium_adapters:
-                    for query in query_terms:
-                        for loc in locations:
-                            tasks.append(
-                                (adapter.source.lower(), query, loc, radius_km)
+                worker_count = min(selenium_workers, len(selenium_tasks))
+                ctx = mp.get_context("spawn")
+                batches = _split_tasks(selenium_tasks, worker_count)
+                with ProcessPoolExecutor(
+                    max_workers=worker_count,
+                    mp_context=ctx,
+                ) as ex:
+                    futures = [
+                        ex.submit(
+                            _selenium_worker,
+                            batch,
+                            radius_km,
+                            limit_per_site,
+                            headless,
+                        )
+                        for batch in batches
+                    ]
+                    for future in as_completed(futures):
+                        result = future.result()
+                        for error in result.get("errors", []):
+                            job_logger.warning("Selenium Worker Fehler: %s", error)
+                        for payload in result.get("results", []):
+                            source = payload.get("source", "unknown")
+                            query = payload.get("query", "")
+                            loc = payload.get("loc", "")
+                            rows = payload.get("rows", [])
+                            duration = float(payload.get("duration", 0.0) or 0.0)
+                            converted = _append_rows(source, rows, query, loc)
+                            if empty_cache_ttl_sec > 0 and converted == 0:
+                                key = _empty_cache_key(source, query, loc, radius_km)
+                                empty_cache_updates[key] = time.time()
+                            adapter_totals[source.lower()] = (
+                                adapter_totals.get(source.lower(), 0.0) + duration
                             )
-
-                if tasks:
-                    worker_count = min(selenium_workers, len(tasks))
-                    batch_size = int(math.ceil(len(tasks) / worker_count))
-                    batches = _chunked(tasks, batch_size)
-                    with ProcessPoolExecutor(max_workers=worker_count) as ex:
-                        futures = [
-                            ex.submit(
-                                _run_selenium_worker,
-                                batch,
-                                headless,
-                                limit_per_site,
-                            )
-                            for batch in batches
-                        ]
-                        for future in as_completed(futures):
-                            logs, rows = future.result()
-                            for source, query, loc, count, error in logs:
-                                if error:
-                                    job_logger.warning(
-                                        "Adapter %s Fehler (query='%s', loc='%s'): %s",
-                                        source,
-                                        query,
-                                        loc,
-                                        error,
-                                    )
-                                else:
-                                    job_logger.info(
-                                        "%s: %s Roh-Treffer (query='%s', loc='%s')",
-                                        source,
-                                        count,
-                                        query,
-                                        loc,
-                                    )
-
-                            for r in rows:
-                                if not isinstance(r, (CHJobRow, ExtraJobRow)):
-                                    if not getattr(r, "title", None) or not getattr(
-                                        r, "link", None
-                                    ):
-                                        continue
-                                score, label = _score_title(r.title)
-                                all_jobs.append(
-                                    Job(
-                                        raw_title=getattr(r, "raw_title", "") or r.title,
-                                        title=r.title,
-                                        company=getattr(r, "company", ""),
-                                        location=getattr(r, "location", ""),
-                                        link=r.link,
-                                        source=getattr(r, "source", "") or "unknown",
-                                        score=score,
-                                        match=label,
-                                        date=getattr(r, "date", "") or "",
-                                    )
-                                )
-            else:
+            elif selenium_tasks:
                 _ensure_driver()
                 for adapter in selenium_adapters:
                     adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
                     for query in query_terms:
                         for loc in locations:
+                            if empty_cache_ttl_sec > 0:
+                                key = _empty_cache_key(
+                                    adapter.source.lower(),
+                                    query,
+                                    loc,
+                                    radius_km,
+                                )
+                                if key in empty_cache:
+                                    empty_cache_skips += 1
+                                    continue
                             try:
                                 _adapter_pause()
                                 rows = adapter.search(
@@ -1505,33 +1589,20 @@ def collect_jobs(
                                     limit=limit_per_site,
                                 )
 
-                                converted = 0
-                                for r in rows:
-                                    if not isinstance(r, (CHJobRow, ExtraJobRow)):
-                                        if not getattr(r, "title", None) or not getattr(
-                                            r, "link", None
-                                        ):
-                                            continue
-                                    score, label = _score_title(r.title)
-                                    all_jobs.append(
-                                        Job(
-                                            raw_title=getattr(r, "raw_title", "") or r.title,
-                                            title=r.title,
-                                            company=getattr(r, "company", ""),
-                                            location=getattr(r, "location", ""),
-                                            link=r.link,
-                                            source=adapter.source,
-                                            score=score,
-                                            match=label,
-                                            date=getattr(r, "date", "") or "",
-                                        )
-                                    )
-                                    converted += 1
-
-                                job_logger.info(
-                                    f"{adapter.source}: {converted} Roh-Treffer "
-                                    f"(query='{query}', loc='{loc}')"
+                                converted = _append_rows(
+                                    adapter.source,
+                                    rows,
+                                    query,
+                                    loc,
                                 )
+                                if empty_cache_ttl_sec > 0 and converted == 0:
+                                    key = _empty_cache_key(
+                                        adapter.source.lower(),
+                                        query,
+                                        loc,
+                                        radius_km,
+                                    )
+                                    empty_cache_updates[key] = time.time()
 
                                 if max_total and len(all_jobs) >= max_total * 2:
                                     break
@@ -1576,6 +1647,23 @@ def collect_jobs(
                     )
                     continue
                 _handle_request_result(source, query, loc, rows, duration)
+
+        if source_counts:
+            summary = ", ".join(
+                f"{source}={count}" for source, count in sorted(source_counts.items())
+            )
+            job_logger.info("Adapter Summary: %s", summary)
+            if ENABLED_SOURCES:
+                zero_hits = [
+                    src
+                    for src in sorted(ENABLED_SOURCES)
+                    if src in known_sources and source_counts.get(src, 0) == 0
+                ]
+                if zero_hits:
+                    job_logger.info(
+                        "ENABLED_SOURCES ohne Treffer (dieser Lauf): %s",
+                        ", ".join(zero_hits),
+                    )
 
         if TIMING_ENABLED and adapter_totals:
             for source, seconds in sorted(adapter_totals.items()):

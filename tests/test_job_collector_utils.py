@@ -10,6 +10,7 @@ from bewerbungsagent.job_collector import (
     _batch_terms,
     _empty_cache_key,
     _prune_empty_search_cache,
+    _split_tasks,
 )
 
 
@@ -36,6 +37,14 @@ class TestJobCollectorUtils(unittest.TestCase):
         pruned = _prune_empty_search_cache(cache, 3600.0, now)
         self.assertIn("keep", pruned)
         self.assertNotIn("drop", pruned)
+
+    def test_split_tasks_round_robin(self) -> None:
+        tasks = [("a",), ("b",), ("c",), ("d",)]
+        chunks = _split_tasks(tasks, 3)
+        self.assertEqual(len(chunks), 3)
+        self.assertEqual(chunks[0], [("a",), ("d",)])
+        self.assertEqual(chunks[1], [("b",)])
+        self.assertEqual(chunks[2], [("c",)])
 
 
 if __name__ == "__main__":

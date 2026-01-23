@@ -114,7 +114,15 @@ Hinweis: `tasks.py` ist nur CLI-Entry/Dispatch; die Command-Logik liegt in `tool
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch,jobscout24,jobwinner,careerjet,jobrapido,monster,jora,jooble` - Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO` (bei Aktivierung wird nach `mail-list` eine Kurz-Zusammenfassung gesendet)
 - `ADAPTER_REQUEST_DELAY=0.4` - Pause zwischen Portal-Requests (gilt für Selenium + Requests)
-- `SELENIUM_WORKERS=1` - Anzahl paralleler Selenium-Worker (empfohlen max 2-3)
+- `SELENIUM_WORKERS=1` - Anzahl paralleler Selenium-Worker (multiprocessing; empfohlen max 2-3, 3 getestet)
+- `REQUESTS_ADAPTER_WORKERS=6` - Parallelisierung für Requests-Adapter (Threadpool)
+- `REQUESTS_ADAPTER_TIMEOUT=15` - Timeout je Requests-Adapter
+- `EMPTY_SEARCH_TTL_HOURS=12` - Cache für leere Ergebnisse (Stunden)
+- `EMPTY_SEARCH_CACHE_PATH=generated/empty_search_cache.json` - Pfad für leere-Cache
+- `QUERY_BATCH_SIZE=3`, `QUERY_BATCH_JOINER=OR`, `QUERY_BATCH_SOURCES=...` - Query-Batching für Requests-Quellen
+- `DETAILS_CONTACT_SCAN=false`, `DETAILS_CONTACT_MAX_BYTES`, `DETAILS_CONTACT_MAX_JOBS`, `DETAILS_CONTACT_TIMEOUT` - optionaler Kontakt-Scan
+- `TIMING_ENABLED=false` - Timing-Logs für Collect/Adapter
+- Versand-Guard: `SEND_APPLICATIONS_ENABLED=false`, `DAILY_SEND_LIMIT=5`
 - `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow
 - `HARD_ALLOWED_LOCATIONS=Zuerich Oerlikon,...` - harter Orts-Allow unabhaengig vom Strict-Filter
 - `COMMUTE_MINUTES=Zuerich Oerlikon:17,...` - OeV-Minuten je Ort (fuer UI-Farbmarkierung + Score-Penalty)
