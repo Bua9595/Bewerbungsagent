@@ -145,10 +145,14 @@ def compute_fit(match: str, score: int, min_score_apply: int) -> str:
 def _normalize_text(value: str) -> str:
     # Text normalisieren (Umlaute/Leerzeichen/Zeichen).
     text = (value or "").lower()
+    text = (
+        text.replace("\u00e4", "ae")
+        .replace("\u00f6", "oe")
+        .replace("\u00fc", "ue")
+        .replace("\u00df", "ss")
+    )
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    text = text.replace("ß", "ss")
-    text = text.replace("ae", "a").replace("oe", "o").replace("ue", "u")
     text = re.sub(r"[^a-z0-9\s]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
