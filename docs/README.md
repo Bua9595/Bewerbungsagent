@@ -20,6 +20,13 @@ pip install -r requirements.txt
 if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wenn sie fehlt
 ```
 
+## Projektstruktur (kurz)
+- `tools/commands/` ? CLI-Kommandos (mail-list, tracker-sync, etc.)
+- `bewerbungsagent/` ? zentrale Logik und Domain-Code
+- `docs/` ? technische + operationale Doku
+- `tests/` ? Unit-Tests
+- `scripts/` ? manuelle Hilfs- und Analyse-Skripte
+
 ### .env ausfüllen (Minimal)
 - `SENDER_EMAIL`, `SENDER_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT` (Gmail: smtp.gmail.com / 587, App-Passwort)
 - `RECIPIENT_EMAILS` (Komma-getrennt)
@@ -40,6 +47,8 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` – manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
 - `python tasks.py gen-templates` – aktualisiert Templates/Tracker-Header
 - `python tasks.py email-test` – SMTP-Test
+
+Hinweis: `tasks.py` ist nur CLI-Entry/Dispatch; die Command-Logik liegt in `tools/commands/`.
 
 ## Verhalten / Filter
 - Standard-Orte: Buelach/Kloten/Zuerich (ASCII; per .env setzbar). Ortsfilter ist hart; mit `STRICT_LOCATION_FILTER=false` wird soft gefiltert.
@@ -76,6 +85,8 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `data/bewerbungen_tracking.csv` - Tracker (wird bei Bedarf angelegt/erweitert)
 - `04_Versendete_Bewerbungen/` - Ziel fuer Kopien nach Versand (wird bei `--mirror-sent` genutzt, sonst manuell)
 
+- `tools/commands/` - Implementierung der CLI-Commands (aus tasks.py ausgelagert)
+- `tools/test_email_config.py` - SMTP-Testscript (Alternative zu `python tasks.py email-test`)
 ## Troubleshooting
 - Encoding: Repo ist UTF-8; wenn PowerShell ??? zeigt, liegt es an der Konsole, nicht an den Dateien.
 - Zu wenige Jobs: `SEARCH_LOCATIONS` erweitern oder `MIN_SCORE_MAIL` senken; Cap per `EMAIL_MAX_JOBS`.
@@ -103,6 +114,7 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch,jobscout24,jobwinner,careerjet,jobrapido,monster,jora,jooble` - Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO` (bei Aktivierung wird nach `mail-list` eine Kurz-Zusammenfassung gesendet)
 - `ADAPTER_REQUEST_DELAY=0.4` - Pause zwischen Portal-Requests (gilt für Selenium + Requests)
+- `SELENIUM_WORKERS=1` - Anzahl paralleler Selenium-Worker (empfohlen max 2-3)
 - `ALLOWED_LOCATIONS=Buelach,Zuerich,Kloten,Winterthur,Baden,Zug` - optionaler Orts-Boost; mit `STRICT_LOCATION_FILTER=true` wird daraus Hard-Allow
 - `HARD_ALLOWED_LOCATIONS=Zuerich Oerlikon,...` - harter Orts-Allow unabhaengig vom Strict-Filter
 - `COMMUTE_MINUTES=Zuerich Oerlikon:17,...` - OeV-Minuten je Ort (fuer UI-Farbmarkierung + Score-Penalty)

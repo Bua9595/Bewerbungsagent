@@ -23,8 +23,10 @@ load_dotenv()
 
 
 class Config:
+    # Zentrale Konfigurationsklasse fuer Defaults und ENV-Overrides.
 
     def __init__(self):
+        # Defaultwerte initialisieren (werden spaeter durch ENV ueberschrieben).
 
         # API Keys (niemals fest codieren  via .env laden)
 
@@ -257,6 +259,7 @@ class Config:
 
 
     def load_from_env(self):
+        # ENV lesen und Defaults gezielt ueberschreiben.
 
         """Lädt Konfiguration aus Umgebungsvariablen und setzt sinnvolle Defaults."""
 
@@ -392,6 +395,7 @@ class Config:
 
         # Feature-Toggles
 
+        # Hilfsfunktion: Bool-ENV robust lesen.
         def _env_bool(key, default):
 
             val = os.getenv(key)
@@ -420,6 +424,7 @@ class Config:
             "ERROR_NOTIFICATIONS_ENABLED", getattr(self, "ERROR_NOTIFICATIONS_ENABLED", True)
         )
 
+        # Maximalzahl Jobs fuer Mails begrenzen.
         env_max_jobs = os.getenv("EMAIL_MAX_JOBS")
         if env_max_jobs:
             try:
@@ -429,6 +434,7 @@ class Config:
 
 
     def validate_config(self):
+        # Minimalanforderungen pruefen.
 
         """Validiert die Konfiguration (Minimalanforderungen)."""
 
@@ -448,6 +454,7 @@ class Config:
 
 # Globale Konfigurationsinstanz
 
+# Globale Konfigurationsinstanz erzeugen und laden.
 config = Config()
 
 config.load_from_env()

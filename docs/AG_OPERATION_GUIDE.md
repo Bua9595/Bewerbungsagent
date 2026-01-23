@@ -37,6 +37,7 @@ Die folgenden Variablen sind für den produktiven Betrieb **zwingend**:
 Optional (Detail-Scan):
 - `DETAILS_BLOCKLIST_SCAN=true` scannt Detailseiten nach blockierten Begriffen.
 - `DETAILS_BLOCKLIST_SKIP_DOMAINS=jobrapido.com,...` ueberspringt Detail-Scan fuer blockende Domains.
+- `SELENIUM_WORKERS=1` (empfohlen max 2-3) parallelisiert Selenium-Adapter.
 Optional (Benachrichtigung/Throttle):
 - `WHATSAPP_ENABLED=true` + `WHATSAPP_TOKEN/PHONE_ID/TO` senden nach `mail-list` eine Kurz-Zusammenfassung.
 - `ADAPTER_REQUEST_DELAY=0.4` setzt eine Pause zwischen Portal-Requests (gilt fuer Selenium + Requests).
@@ -48,6 +49,7 @@ Führt die Suche aus, filtert Jobs und sendet eine E-Mail mit den besten Treffer
 ```bash
 python tasks.py mail-list
 ```
+Hinweis: `tasks.py` ist nur der CLI-Entry; die Command-Logik liegt in `tools/commands/`.
 *Hinweis: `mail-list` synchronisiert automatisch Markierungen aus `generated/job_tracker.xlsx`.*
 *CSV wird weiterhin unterstuetzt via `JOB_TRACKER_FILE=generated/job_tracker.csv`.*
 *Run-Lock: `RUN_LOCK_FILE` + `RUN_LOCK_TTL_MIN` verhindern parallele Laeufe.*

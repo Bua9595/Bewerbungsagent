@@ -4,6 +4,7 @@ Datum: automatisch erstellt
 
 ## Status
 - Öffentliches Repo angelegt und initialer Push erfolgt.
+- CLI-Commands nach `tools/commands/` ausgelagert; `tasks.py` ist nur Parser/Dispatch.
 - .gitignore schützt `.env`, Logs, generierte Dateien und persönliche Dokumente.
 - `.env.example` vorhanden; reale `.env` bleibt lokal.
 - PII aus Code entfernt; Profilfelder (Name/Email/LinkedIn) kommen aus ENV.
@@ -29,6 +30,7 @@ Datum: automatisch erstellt
 - `python tasks.py start` – Links aktualisieren, Anzeige/optional öffnen
 - `python tasks.py open` – Portale direkt öffnen
 - `python tasks.py email-test` – SMTP‑Verbindung testen (wenn aktiviert)
+- `python tools/test_email_config.py` - SMTP-Test (Script)
 
 ## Hinweise
 - Auf neuem Gerät: Repo klonen, `pip install -r requirements.txt`, `.env` aus `.env.example` anlegen und füllen.

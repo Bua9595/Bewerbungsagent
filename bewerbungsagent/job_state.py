@@ -23,6 +23,7 @@ TERMINAL_STATUSES = {STATUS_APPLIED, STATUS_IGNORED, STATUS_CLOSED}
 
 
 def now_iso() -> str:
+    # UTC-Timestamp in ISO-Format (Z-Suffix).
     return (
         datetime.now(timezone.utc)
         .replace(microsecond=0)
@@ -32,6 +33,7 @@ def now_iso() -> str:
 
 
 def parse_ts(value: str | None) -> datetime | None:
+    # ISO-Timestamp sicher parsen.
     if not value:
         return None
     try:
@@ -41,6 +43,7 @@ def parse_ts(value: str | None) -> datetime | None:
 
 
 def _normalize_text(value: str) -> str:
+    # Text normalisieren (lowercase, diakritische entfernen, nur a-z0-9).
     text = (value or "").lower()
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -49,6 +52,7 @@ def _normalize_text(value: str) -> str:
 
 
 def canonicalize_url(url: str) -> str:
+    # URL auf kanonische Form kuerzen (Schema/Host lower, Pfad ohne Slash).
     if not url:
         return ""
     raw = url.strip()
@@ -67,6 +71,7 @@ def canonicalize_url(url: str) -> str:
 
 
 def _job_to_dict(job: Any) -> Dict[str, Any]:
+    # Jobobjekt robust in Dict umwandeln.
     if isinstance(job, dict):
         return dict(job)
     if hasattr(job, "__dict__"):
@@ -75,6 +80,7 @@ def _job_to_dict(job: Any) -> Dict[str, Any]:
 
 
 def build_job_uid(job: Any) -> Tuple[str, str]:
+    # Stabile UID aus URL/ID/Fallback-Daten erzeugen.
     data = _job_to_dict(job)
     source = (
         data.get("source")
@@ -95,6 +101,7 @@ def build_job_uid(job: Any) -> Tuple[str, str]:
     ).strip()
     canonical_url = canonicalize_url(link)
 
+    # Prioritaet: kanonische URL -> externe ID -> Fallback-Text.
     base = ""
     if canonical_url:
         base = f"url|{source}|{canonical_url}"
@@ -128,6 +135,7 @@ def build_job_uid(job: Any) -> Tuple[str, str]:
 
 
 def _empty_state_record(now: str) -> Dict[str, Any]:
+    # Basisstruktur fuer einen State-Eintrag.
     return {
         "job_uid": "",
         "source": "",
@@ -148,6 +156,7 @@ def _empty_state_record(now: str) -> Dict[str, Any]:
 
 
 def _migrate_seen_jobs(seen_path: Path, now: str) -> Dict[str, Dict[str, Any]]:
+    # Altes seen_jobs.json in neues State-Format migrieren.
     state: Dict[str, Dict[str, Any]] = {}
     try:
         raw = json.loads(seen_path.read_text(encoding="utf-8"))
@@ -159,6 +168,7 @@ def _migrate_seen_jobs(seen_path: Path, now: str) -> Dict[str, Dict[str, Any]]:
     if not isinstance(raw, list):
         return state
 
+    # Eintraege in neue Struktur uebertragen.
     for entry in raw:
         if isinstance(entry, dict):
             job_uid, canonical_url = build_job_uid(entry)
@@ -182,6 +192,7 @@ def _migrate_seen_jobs(seen_path: Path, now: str) -> Dict[str, Dict[str, Any]]:
                 }
             )
         else:
+            # Legacy-Format: nur ein Key pro Eintrag.
             key = str(entry)
             job_uid = sha256(f"legacy|{key}".encode("utf-8")).hexdigest()[:16]
             record = _empty_state_record(now)
@@ -204,6 +215,7 @@ def load_state(
     seen_path: Path = SEEN_PATH,
     now: str | None = None,
 ) -> Dict[str, Dict[str, Any]]:
+    # State laden; falls nicht vorhanden, optional aus seen_jobs migrieren.
     if path.exists():
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -212,6 +224,7 @@ def load_state(
         if isinstance(raw, dict):
             return raw
         if isinstance(raw, list):
+            # Legacy-Liste in Dict nach job_uid konvertieren.
             converted = {}
             for item in raw:
                 if not isinstance(item, dict):
@@ -231,6 +244,7 @@ def load_state(
 
 
 def save_state(state: Dict[str, Dict[str, Any]], path: Path = STATE_PATH) -> None:
+    # State als JSON im Zielpfad speichern.
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True)
     path.write_text(payload, encoding="utf-8")
@@ -242,6 +256,7 @@ def should_send_reminder(
     reminder_days: int,
     daily_reminders: bool,
 ) -> bool:
+    # Entscheiden, ob ein Reminder faellig ist.
     if daily_reminders:
         return True
     if not last_sent_at:

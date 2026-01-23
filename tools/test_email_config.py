@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Test-Skript für die E-Mail-Konfiguration.
-Gibt IMMER (success: bool, output_lines: list[str]) zurück.
+Test-Skript fuer die E-Mail-Konfiguration.
+Gibt IMMER (success: bool, output_lines: list[str]) zurueck.
 """
+
+__test__ = False
 
 import os
 import sys
@@ -18,7 +20,7 @@ from bewerbungsagent.email_automation import EmailAutomation
 
 
 def test_config():
-    """Prüft ENV/Config und gibt (ok, lines) zurück."""
+    """Prueft ENV/Config und gibt (ok, lines) zurueck."""
     output = []
     output.append("=== E-Mail Konfiguration Test ===")
 
@@ -38,7 +40,7 @@ def test_config():
 
     if not password_set:
         output.append("ERROR: SENDER_PASSWORD ist nicht konfiguriert!")
-        output.append("Stelle sicher, dass .env SENDER_PASSWORD enthält und geladen wird.")
+        output.append("Stelle sicher, dass .env SENDER_PASSWORD enthaelt und geladen wird.")
         return False, output
 
     output.append("OK. Konfiguration scheint korrekt zu sein.")
@@ -46,7 +48,7 @@ def test_config():
 
 
 def test_email_connection():
-    """Testet SMTP Login und gibt (ok, lines) zurück."""
+    """Testet SMTP Login und gibt (ok, lines) zurueck."""
     output = []
     output.append("=== E-Mail Verbindung Test ===")
 
@@ -69,8 +71,8 @@ def test_email_connection():
         output.append("OK. E-Mail-Verbindung erfolgreich!")
         return True, output
 
-    except Exception as e:
-        output.append(f"ERROR: E-Mail-Verbindung fehlgeschlagen: {e}")
+    except Exception as exc:
+        output.append(f"ERROR: E-Mail-Verbindung fehlgeschlagen: {exc}")
         return False, output
 
 

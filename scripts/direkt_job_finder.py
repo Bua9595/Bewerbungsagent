@@ -37,7 +37,7 @@ class DirectJobFinder:
                 "Ticketing (z. B. ServiceNow/Jira)",
                 "Hardware/Imaging, Remote Support",
                 "Netzwerk-Grundlagen (TCP/IP, VLAN)",
-                "SAP (lagerrelevante Prozesse)",
+                "SAP",
                 "Python/SQL (Grundlagen)",
             ],
         }

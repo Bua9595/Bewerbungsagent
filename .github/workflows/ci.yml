@@ -36,12 +36,7 @@ jobs:
         run: |
           python -m compileall .
 
-      - name: Import smoke test
+      - name: Pytest (smoke)
         run: |
-          python - <<'PY'
-          from config import config
-          from job_query_builder import build_search_urls
-          urls = build_search_urls(config)
-          print('URLs:', list(urls)[:2])
-          PY
+          pytest -q
 

@@ -6,6 +6,7 @@ def build_search_urls(config):
 
     Returns a dict: {description: url}
     """
+    # Grundeinstellungen (Locations, Radius, Keywords) aus Config lesen.
     locations = getattr(config, "SEARCH_LOCATIONS", ["Zuerich"]) or ["Zuerich"]
     try:
         radius = int(getattr(config, "LOCATION_RADIUS_KM", 25) or 25)
@@ -18,6 +19,7 @@ def build_search_urls(config):
     )
     neg = getattr(config, "NEGATIVE_KEYWORDS", []) or []
 
+    # Hilfsfunktionen fuer Suchsyntax (OR und Minus).
     def or_join(items):
         cleaned = [i.strip() for i in items if isinstance(i, str) and i.strip()]
         return " OR ".join([f'"{i}"' if " " in i else i for i in cleaned])
@@ -27,13 +29,16 @@ def build_search_urls(config):
         # Negative Keywords dürfen keine Quotes brauchen – wir nutzen simple -token
         return " ".join([f"-{i}" for i in cleaned])
 
+    # Positive/negative Query-Teile auf eine sinnvolle Laenge begrenzen.
     # bewusst limitiert: zu lange Queries werden von Portalen schlechter verarbeitet
     pos_query = or_join((base_keywords + variants)[:8])
     neg_query = minus_join(neg)
 
+    # Primaere Begriffe fuer Portale, die nur 1 Keyword erlauben.
     primary_kw = base_keywords[0].strip() if base_keywords else "IT Support"
     primary_loc = locations[0].strip() if locations else "Zuerich"
 
+    # Portalspezifische URL-Aufbaus.
     # LinkedIn
     li_loc = quote_plus(f"{primary_loc}, Schweiz")
     li_q = quote_plus(f"{pos_query} {neg_query}".strip())
@@ -80,6 +85,7 @@ def build_search_urls(config):
     jora = f"https://ch.jora.com/j?q={quote_plus(primary_kw)}&l={quote_plus(primary_loc)}"
     jooble = f"https://ch.jooble.org/SearchResult?ukw={quote_plus(primary_kw)}&rgns={quote_plus(primary_loc)}"
 
+    # Beschriftete URL-Liste fuer CLI/UI.
     return {
         "LinkedIn • Entry-Level IT": linkedin,
         "Indeed • Junior/1st Level": indeed,

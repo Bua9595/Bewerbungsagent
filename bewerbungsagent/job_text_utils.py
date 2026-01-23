@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Tuple
 
+# Regex-Hilfen fuer Firmen-/Ort-/Label-Erkennung.
 _COMPANY_HINT_RE = re.compile(
     r"\b(ag|gmbh|sa|s\.a\.|kg|sarl|s\u00e0rl|sarl\.?|ltd|inc|llc)\b",
     re.IGNORECASE,
@@ -28,12 +29,14 @@ _CITY_HINT_RE = re.compile(
 
 
 def _normalize_line(line: str) -> str:
+    # Zeilen bereinigen und Prefixe entfernen.
     # Remove leading "01. [exact]" style prefixes.
     line = re.sub(r"^\s*\d+\.\s*\[[^\]]+\]\s*", "", line)
     return line.strip().strip('"').strip()
 
 
 def _is_noise_line(line: str) -> bool:
+    # Zeilen rausfiltern, die Labels/Meta enthalten.
     if not line:
         return True
     if _LABEL_RE.search(line):
@@ -49,9 +52,11 @@ def extract_from_multiline_title(raw_title: str) -> Tuple[str, str, str]:
     """
     Parse multi-line titles into (job_title, company, location).
     """
+    # Rohzeilen normalisieren und leere entfernen.
     raw_lines = [_normalize_line(x) for x in (raw_title or "").splitlines()]
     raw_lines = [x for x in raw_lines if x]
 
+    # Arbeitsort ggf. explizit aus "Arbeitsort" Ableiten.
     location = ""
     for i, line in enumerate(raw_lines):
         if line.lower().startswith("arbeitsort"):
@@ -59,27 +64,33 @@ def extract_from_multiline_title(raw_title: str) -> Tuple[str, str, str]:
                 location = _normalize_line(raw_lines[i + 1])
             break
 
+    # Relevante Zeilen uebrig behalten.
     clean = [line for line in raw_lines if not _is_noise_line(line)]
 
+    # Erster Eintrag gilt als Jobtitel.
     job_title = clean[0] if clean else ""
     company = ""
 
+    # Firma aus typischen Suffixen ableiten.
     for line in reversed(clean):
         if _COMPANY_HINT_RE.search(line):
             company = line
             break
 
+    # Fallback: letzte Zeile als Firma, wenn plausibel.
     if not company and len(clean) >= 2:
         company = clean[-1]
         if company == job_title:
             company = ""
 
+    # Ort ueber City-Hints suchen, falls nicht gefunden.
     if not location:
         for line in clean[1:]:
             if _CITY_HINT_RE.search(line):
                 location = line
                 break
 
+    # Falls Ort und Firma identisch, Ort leeren.
     if location == company:
         location = ""
 

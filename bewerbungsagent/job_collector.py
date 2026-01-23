@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -13,6 +13,7 @@ import json
 import time
 import threading
 import unicodedata
+import math
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -41,6 +42,7 @@ from .job_query_builder import build_search_urls
 from .job_text_utils import extract_from_multiline_title
 
 
+# Kanonisches Job-Objekt fuer Sammeln/Export.
 @dataclass
 class Job:
     raw_title: str
@@ -59,6 +61,7 @@ class Job:
 
 
 def _mk_driver(headless: bool = True) -> webdriver.Chrome:
+    # Selenium-Driver mit stabilen Optionen konfigurieren.
     opts = Options()
     if headless:
         opts.add_argument("--headless=new")
@@ -87,6 +90,7 @@ def _mk_driver(headless: bool = True) -> webdriver.Chrome:
 
 
 def _get_html(driver: webdriver.Chrome, url: str, tries: int = 2) -> str:
+    # Seite laden mit Retry.
     for i in range(tries):
         try:
             driver.get(url)
@@ -98,10 +102,12 @@ def _get_html(driver: webdriver.Chrome, url: str, tries: int = 2) -> str:
 
 
 def _text(v: str | None) -> str:
+    # Sicheres Trimmen von Text.
     return (v or "").strip()
 
 
 def _score_title(title: str) -> Tuple[int, str]:
+    # Titel anhand positiver/negativer Keywords bewerten.
     t = title.lower()
 
     positives_raw = (
@@ -127,6 +133,7 @@ def _score_title(title: str) -> Tuple[int, str]:
 
 
 def compute_fit(match: str, score: int, min_score_apply: int) -> str:
+    # Fit-Entscheid aus Match + Score ableiten.
     m = (match or "").lower()
     if m in {"exact", "good"} and score >= min_score_apply:
         return "OK"
@@ -136,6 +143,7 @@ def compute_fit(match: str, score: int, min_score_apply: int) -> str:
 
 
 def _normalize_text(value: str) -> str:
+    # Text normalisieren (Umlaute/Leerzeichen/Zeichen).
     text = (value or "").lower()
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -147,6 +155,7 @@ def _normalize_text(value: str) -> str:
 
 
 def _parse_commute_map(raw: str) -> list[tuple[str, int]]:
+    # Pendelzeiten-Map aus ENV-String parsen.
     if not raw:
         return []
     items: list[tuple[str, int]] = []
@@ -175,6 +184,7 @@ def _parse_commute_map(raw: str) -> list[tuple[str, int]]:
 def _commute_minutes_for(
     job: "Job", commute_map: list[tuple[str, int]]
 ) -> int | None:
+    # Passende Pendelzeit fuer Job anhand Standort-Keywords finden.
     if not commute_map:
         return None
     texts = [
@@ -188,6 +198,7 @@ def _commute_minutes_for(
     return None
 
 
+# Marker fuer "Job nicht gefunden" bei Aggregatoren.
 AGGREGATOR_NOT_FOUND_MARKERS = (
     "404",
     "page not found",
@@ -201,6 +212,7 @@ AGGREGATOR_NOT_FOUND_MARKERS = (
 
 
 def _aggregator_link_ok(url: str) -> bool:
+    # Link pruefen, ob Detailseite erreichbar ist (mit Cache).
     if not url:
         return False
     if url in AGGREGATOR_LINK_CACHE:
@@ -241,10 +253,12 @@ def _aggregator_link_ok(url: str) -> bool:
 
 
 def _normalize_terms(items: set[str]) -> set[str]:
+    # Begriffe vereinheitlichen (normalisieren).
     return {_normalize_text(x) for x in items if x}
 
 
 def _dedupe_terms(items: List[str]) -> List[str]:
+    # Duplikate entfernen, Reihenfolge behalten.
     seen = set()
     out: List[str] = []
     for item in items:
@@ -315,6 +329,7 @@ def _save_empty_search_cache(path: Path, cache: dict[str, float]) -> None:
         return
 
 
+# ENV/Feature-Flags und Grenzen fuer das Sammeln.
 TRUTHY = {"1", "true", "t", "y", "yes", "ja", "j"}
 EXPORT_CSV = str(os.getenv("EXPORT_CSV", "true")).lower() in TRUTHY
 EXPORT_CSV_PATH = os.getenv("EXPORT_CSV_PATH", "generated/jobs_latest.csv")
@@ -331,6 +346,8 @@ EMPTY_SEARCH_CACHE_PATH = Path(
     os.getenv("EMPTY_SEARCH_CACHE_PATH", "generated/empty_search_cache.json")
 )
 TIMING_ENABLED = str(os.getenv("TIMING_ENABLED", "false")).lower() in TRUTHY
+SELENIUM_WORKERS = int(os.getenv("SELENIUM_WORKERS", "1") or 1)
+SELENIUM_WORKERS_RECOMMENDED_MAX = 3
 ALLOWED_LOCATION_BOOST = int(os.getenv("ALLOWED_LOCATION_BOOST", "2") or 2)
 ALLOWED_LOCATIONS = {
     x.strip().lower()
@@ -480,6 +497,7 @@ TRANSIT_TIME = os.getenv("TRANSIT_TIME", "").strip()
 TRANSIT_DATE = os.getenv("TRANSIT_DATE", "").strip()
 TRANSIT_TIMEOUT = float(os.getenv("TRANSIT_TIMEOUT", "12") or 12)
 
+# In-Memory-Caches fuer Detail-Scans und Checks.
 DETAILS_BLOCKLIST_CACHE: dict[str, bool] = {}
 DETAILS_CONTACT_CACHE: dict[str, tuple[str, str]] = {}
 TRANSIT_CACHE: dict[tuple[str, str, str, str], int | None] = {}
@@ -513,6 +531,7 @@ CAREER_MIN_SCORE = int(os.getenv("CAREER_MIN_SCORE", "0") or 0)
 
 
 class _AnchorParser(HTMLParser):
+    # Minimaler HTML-Parser fuer Links + Text.
     def __init__(self) -> None:
         super().__init__()
         self.links: List[Tuple[str, str]] = []
@@ -545,12 +564,14 @@ class _AnchorParser(HTMLParser):
 
 
 def _extract_links(html: str) -> List[Tuple[str, str]]:
+    # Alle Anchor-Hrefs + Text extrahieren.
     parser = _AnchorParser()
     parser.feed(html or "")
     return parser.links
 
 
 def _company_name_from_url(url: str) -> str:
+    # Firmenname heuristisch aus Domain ableiten.
     host = urlparse(url).netloc.lower()
     if host.startswith("www."):
         host = host[4:]
@@ -563,6 +584,7 @@ def _company_name_from_url(url: str) -> str:
 
 
 def _collect_company_careers(urls: List[str], names: List[str]) -> List[Job]:
+    # Eigene Karriere-Seiten nach Links durchsuchen.
     jobs: List[Job] = []
     if not urls:
         return jobs
@@ -626,6 +648,7 @@ def _collect_company_careers(urls: List[str], names: List[str]) -> List[Job]:
 
 
 def _location_boost(job_location: str, search_locations: List[str]) -> int:
+    # Bonus, wenn Standort zu Suchorten passt.
     jl = _normalize_text(job_location or "")
     return (
         1
@@ -635,6 +658,7 @@ def _location_boost(job_location: str, search_locations: List[str]) -> int:
 
 
 def _is_remote(job: Job) -> bool:
+    # Remote-Job anhand Keywords erkennen.
     if not REMOTE_KEYWORDS:
         return False
     blob = " ".join([job.location or "", job.title or "", job.raw_title or ""])
@@ -643,6 +667,7 @@ def _is_remote(job: Job) -> bool:
 
 
 def _tokens_in_order(tokens: list[str], terms: list[str]) -> bool:
+    # Pruefen, ob Term-Tokens in Reihenfolge vorkommen.
     if not tokens or not terms:
         return False
     idx = 0
@@ -655,6 +680,7 @@ def _tokens_in_order(tokens: list[str], terms: list[str]) -> bool:
 
 
 def _contains_blocked_terms(normalized: str, blocked: set[str]) -> bool:
+    # Blockierte Begriffe im Text finden.
     if not normalized or not blocked:
         return False
     if any(term in normalized for term in blocked):
@@ -670,6 +696,7 @@ def _contains_blocked_terms(normalized: str, blocked: set[str]) -> bool:
 
 
 def _has_blocked_keywords(job: Job, blocked: set[str]) -> bool:
+    # Jobtext gegen Blocklist pruefen.
     if not blocked:
         return False
     blob = " ".join([job.title or "", job.raw_title or "", job.location or ""])
@@ -678,6 +705,7 @@ def _has_blocked_keywords(job: Job, blocked: set[str]) -> bool:
 
 
 def _has_required_keywords(job: Job, required: set[str]) -> bool:
+    # Jobtext gegen Required-Keywords pruefen.
     if not required:
         return True
     blob = " ".join(
@@ -703,6 +731,7 @@ _DURATION_RE = re.compile(r"(?:(\d+)d)?(\d{1,2}):(\d{2}):(\d{2})")
 
 
 def _parse_duration_minutes(value: str) -> int | None:
+    # Opendata-Dauerstring in Minuten umrechnen.
     if not value:
         return None
     match = _DURATION_RE.match(value)
@@ -717,6 +746,7 @@ def _parse_duration_minutes(value: str) -> int | None:
 def _get_transit_minutes(
     origin: str, destination: str, date: str, time_str: str
 ) -> int | None:
+    # Opendata Transit-API abfragen (mit Cache).
     key = (origin, destination, date, time_str)
     if key in TRANSIT_CACHE:
         return TRANSIT_CACHE[key]
@@ -761,6 +791,7 @@ _CONTACT_LABEL_RE = re.compile(
 
 
 def _extract_emails_from_html(html: str) -> List[str]:
+    # E-Mails aus HTML/Links extrahieren und filtern.
     if not html:
         return []
     candidates: List[str] = []
@@ -794,6 +825,7 @@ def _extract_emails_from_html(html: str) -> List[str]:
 
 
 def _pick_email(candidates: List[str]) -> str:
+    # Passendste E-Mail anhand von Hinweisen auswaehlen.
     if not candidates:
         return ""
     for hint in _EMAIL_HINTS:
@@ -804,6 +836,7 @@ def _pick_email(candidates: List[str]) -> str:
 
 
 def _html_to_lines(html: str) -> List[str]:
+    # HTML in bereinigte Textzeilen umwandeln.
     if not html:
         return []
     text = re.sub(r"(?i)<br\s*/?>", "\n", html)
@@ -820,6 +853,7 @@ def _html_to_lines(html: str) -> List[str]:
 
 
 def _looks_like_name(text: str) -> bool:
+    # Heuristik, ob String wie ein Personenname aussieht.
     if not text or "@" in text:
         return False
     if len(text) > 80:
@@ -831,6 +865,7 @@ def _looks_like_name(text: str) -> bool:
 
 
 def _clean_contact_line(line: str) -> str:
+    # Kontaktzeile bereinigen und Label entfernen.
     candidate = line.strip()
     if ":" in candidate:
         head, tail = candidate.split(":", 1)
@@ -845,6 +880,7 @@ def _clean_contact_line(line: str) -> str:
 
 
 def _extract_contact_name(lines: List[str]) -> str:
+    # Kontaktname anhand von Label + Folgelinien suchen.
     for idx, line in enumerate(lines):
         if not _CONTACT_LABEL_RE.search(line):
             continue
@@ -861,6 +897,7 @@ def _extract_contact_name(lines: List[str]) -> str:
 
 
 def _detail_page_contact(url: str) -> Tuple[str, str]:
+    # Detailseite scannen und Kontaktinfos cachen.
     if not url:
         return "", ""
     if url in DETAILS_CONTACT_CACHE:
@@ -888,10 +925,12 @@ def _detail_page_contact(url: str) -> Tuple[str, str]:
 
 
 def extract_application_contact(url: str) -> Tuple[str, str]:
+    # Oeffentliche API fuer Kontakt-Extraktion.
     return _detail_page_contact(url)
 
 
 def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
+    # Detailseite auf blockierte Begriffe pruefen (mit Cache).
     if not url or not blocked:
         return False
     if url in DETAILS_BLOCKLIST_CACHE:
@@ -922,6 +961,7 @@ def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
 
 
 def _is_skipped_detail_domain(url: str) -> bool:
+    # Domains aus dem Detail-Scan ausschliessen.
     if not url or not DETAILS_BLOCKLIST_SKIP_DOMAINS:
         return False
     try:
@@ -937,6 +977,7 @@ def _is_skipped_detail_domain(url: str) -> bool:
 
 
 def _is_local(job: Job, search_locations: List[str]) -> bool:
+    # Job mit Suchorten abgleichen.
     if not search_locations:
         return True
     texts = [
@@ -952,6 +993,7 @@ def _is_local(job: Job, search_locations: List[str]) -> bool:
 
 
 def _is_allowed_location(job: Job, allowed: set[str]) -> bool:
+    # Job gegen erlaubte Orte pruefen.
     if not allowed:
         return True
     texts = [
@@ -967,6 +1009,7 @@ def _is_allowed_location(job: Job, allowed: set[str]) -> bool:
 
 
 def _norm_key(title: str, company: str, link: str) -> str:
+    # Dedupe-Schluessel aus Titel/Firma/Link.
     t = re.sub(r"\W+", "", (title or "").lower())
     c = re.sub(r"\W+", "", (company or "").lower())
     lnk = re.sub(r"[?#].*$", "", (link or "").lower())
@@ -974,6 +1017,7 @@ def _norm_key(title: str, company: str, link: str) -> str:
 
 
 def export_json(rows: List[Job], path: str | None = None) -> None:
+    # JSON-Export fuer weitere Verarbeitung.
     out_path = Path(path or Path("data") / "jobs.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     serializable = []
@@ -1016,6 +1060,7 @@ def _collect_indeed(
     url: str,
     limit: int | None = 25,
 ) -> List[Job]:
+    # Indeed-Resultate per Selenium auslesen.
     jobs: List[Job] = []
     _get_html(driver, url)
 
@@ -1066,12 +1111,14 @@ def _collect_indeed(
 
 
 def _normalize_limit(value: int | None) -> int | None:
+    # Limit nur akzeptieren, wenn > 0.
     if value is None:
         return None
     return value if value > 0 else None
 
 
 def _adapter_pause() -> None:
+    # Pause zwischen Adapter-Requests.
     if ADAPTER_REQUEST_DELAY > 0:
         time.sleep(ADAPTER_REQUEST_DELAY)
 
@@ -1082,12 +1129,57 @@ def _timing_log(label: str, seconds: float, extra: str = "") -> None:
     suffix = f" {extra}" if extra else ""
     job_logger.info(f"timing {label}={seconds:.2f}s{suffix}")
 
+def _chunked(items: list, size: int) -> list[list]:
+    if size <= 0:
+        return [items]
+    return [items[i : i + size] for i in range(0, len(items), size)]
+
+
+def _run_selenium_worker(task_batch: list[tuple[str, str, str, int]], headless: bool, limit_per_site: int | None):
+    from .job_adapters_ch import JobsChAdapter, JobupAdapter
+
+    adapter_map = {
+        "jobs.ch": JobsChAdapter(),
+        "jobup.ch": JobupAdapter(),
+    }
+    logs: list[tuple[str, str, str, int, str]] = []
+    rows: list = []
+
+    driver = _mk_driver(headless=headless)
+    try:
+        for source, query, location, radius_km in task_batch:
+            adapter = adapter_map.get(source)
+            if not adapter:
+                continue
+            try:
+                _adapter_pause()
+                result = adapter.search(
+                    driver,
+                    query=query,
+                    location=location,
+                    radius_km=radius_km,
+                    limit=limit_per_site,
+                )
+                logs.append((source, query, location, len(result), ""))
+                rows.extend(result)
+            except Exception as exc:
+                logs.append((source, query, location, 0, str(exc)))
+    finally:
+        try:
+            driver.quit()
+        except Exception:
+            pass
+
+    return logs, rows
+
 
 def collect_jobs(
     limit_per_site: int | None = None,
     max_total: int | None = None,
 ) -> List[Job]:
     total_start = time.perf_counter() if TIMING_ENABLED else 0.0
+    # Hauptsammlung: alle Quellen durchsuchen und filtern.
+    # Limits konsolidieren.
     if limit_per_site is None:
         limit_per_site = _normalize_limit(COLLECT_LIMIT_PER_SITE)
     else:
@@ -1098,6 +1190,7 @@ def collect_jobs(
     else:
         max_total = _normalize_limit(max_total)
 
+    # Such-URLs und Query-Terme vorbereiten.
     urls = build_search_urls(config)
 
     base_keywords = getattr(config, "SEARCH_KEYWORDS", []) or ["IT Support"]
@@ -1134,11 +1227,18 @@ def collect_jobs(
             cache_now,
         )
 
+    # Trefferliste und optionaler Selenium-Driver.
     all_jobs: List[Job] = []
-    driver_start = time.perf_counter() if TIMING_ENABLED else 0.0
-    driver = _mk_driver(headless=getattr(config, "HEADLESS_MODE", True))
-    if TIMING_ENABLED:
-        _timing_log("driver_init", time.perf_counter() - driver_start)
+    driver = None
+    headless = getattr(config, "HEADLESS_MODE", True)
+
+    def _ensure_driver():
+        nonlocal driver
+        if driver is None:
+            driver_start = time.perf_counter() if TIMING_ENABLED else 0.0
+            driver = _mk_driver(headless=headless)
+            if TIMING_ENABLED:
+                _timing_log("driver_init", time.perf_counter() - driver_start)
 
     try:
         # Indeed (falls URL vorhanden)
@@ -1154,6 +1254,7 @@ def collect_jobs(
             and "indeed" not in BLOCKED_SOURCES
         ):
             try:
+                _ensure_driver()
                 _adapter_pause()
                 adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
                 indeed_jobs = _collect_indeed(
@@ -1173,6 +1274,7 @@ def collect_jobs(
                 job_logger.warning(f"Indeed Adapter Fehler: {e}")
 
         adapter_totals: dict[str, float] = {}
+        selenium_adapters = [JobsChAdapter(), JobupAdapter()]
         request_adapters = [
             JobScout24Adapter(),
             JobWinnerAdapter(),
@@ -1182,10 +1284,18 @@ def collect_jobs(
             JoraAdapter(),
             JoobleAdapter(),
         ]
-        selenium_adapters = [
-            JobsChAdapter(),
-            JobupAdapter(),
-        ]
+
+        def _allowed(adapter) -> bool:
+            source = adapter.source.lower()
+            if source in BLOCKED_SOURCES:
+                return False
+            if ENABLED_SOURCES and source not in ENABLED_SOURCES:
+                return False
+            return True
+
+        selenium_adapters = [a for a in selenium_adapters if _allowed(a)]
+        request_adapters = [a for a in request_adapters if _allowed(a)]
+
         request_tasks: list[tuple[object, str, str]] = []
         request_futures: dict = {}
         request_executor: ThreadPoolExecutor | None = None
@@ -1266,10 +1376,6 @@ def collect_jobs(
         if request_adapters:
             for adapter in request_adapters:
                 source = adapter.source.lower()
-                if source in BLOCKED_SOURCES:
-                    continue
-                if ENABLED_SOURCES and source not in ENABLED_SOURCES:
-                    continue
                 source_queries = (
                     batched_queries
                     if QUERY_BATCH_SIZE > 1 and source in QUERY_BATCH_SOURCES
@@ -1299,51 +1405,144 @@ def collect_jobs(
                     )
                     request_futures[future] = (adapter, query, loc)
 
-        for adapter in selenium_adapters:
-            source = adapter.source.lower()
-            if source in BLOCKED_SOURCES:
-                continue
-            if ENABLED_SOURCES and source not in ENABLED_SOURCES:
-                continue
+        selenium_workers = max(1, SELENIUM_WORKERS)
+        if selenium_workers > SELENIUM_WORKERS_RECOMMENDED_MAX:
+            job_logger.warning(
+                "SELENIUM_WORKERS=%s kann instabil sein (empfohlen max %s).",
+                selenium_workers,
+                SELENIUM_WORKERS_RECOMMENDED_MAX,
+            )
 
-            adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
-            # ?ber Keywords + Locations iterieren, aber fr?h abbrechen
-            for query in query_terms:
-                for loc in locations:
-                    if empty_cache_ttl_sec > 0:
-                        key = _empty_cache_key(source, query, loc, radius_km)
-                        if key in empty_cache:
-                            empty_cache_skips += 1
-                            continue
+        # Selenium-Adapter: optional parallelisieren.
+        if selenium_adapters:
+            if selenium_workers > 1:
+                if driver is not None:
                     try:
-                        _adapter_pause()
-                        rows = adapter.search(
-                            driver,
-                            query=query,
-                            location=loc,
-                            radius_km=radius_km,
-                            limit=limit_per_site,
-                        )
+                        driver.quit()
+                    except Exception:
+                        pass
+                    driver = None
 
-                        converted = _append_rows(adapter.source, rows, query, loc)
-                        if empty_cache_ttl_sec > 0 and converted == 0:
-                            key = _empty_cache_key(source, query, loc, radius_km)
-                            empty_cache_updates[key] = time.time()
+                tasks: list[tuple[str, str, str, int]] = []
+                for adapter in selenium_adapters:
+                    for query in query_terms:
+                        for loc in locations:
+                            tasks.append(
+                                (adapter.source.lower(), query, loc, radius_km)
+                            )
 
+                if tasks:
+                    worker_count = min(selenium_workers, len(tasks))
+                    batch_size = int(math.ceil(len(tasks) / worker_count))
+                    batches = _chunked(tasks, batch_size)
+                    with ProcessPoolExecutor(max_workers=worker_count) as ex:
+                        futures = [
+                            ex.submit(
+                                _run_selenium_worker,
+                                batch,
+                                headless,
+                                limit_per_site,
+                            )
+                            for batch in batches
+                        ]
+                        for future in as_completed(futures):
+                            logs, rows = future.result()
+                            for source, query, loc, count, error in logs:
+                                if error:
+                                    job_logger.warning(
+                                        "Adapter %s Fehler (query='%s', loc='%s'): %s",
+                                        source,
+                                        query,
+                                        loc,
+                                        error,
+                                    )
+                                else:
+                                    job_logger.info(
+                                        "%s: %s Roh-Treffer (query='%s', loc='%s')",
+                                        source,
+                                        count,
+                                        query,
+                                        loc,
+                                    )
+
+                            for r in rows:
+                                if not isinstance(r, (CHJobRow, ExtraJobRow)):
+                                    if not getattr(r, "title", None) or not getattr(
+                                        r, "link", None
+                                    ):
+                                        continue
+                                score, label = _score_title(r.title)
+                                all_jobs.append(
+                                    Job(
+                                        raw_title=getattr(r, "raw_title", "") or r.title,
+                                        title=r.title,
+                                        company=getattr(r, "company", ""),
+                                        location=getattr(r, "location", ""),
+                                        link=r.link,
+                                        source=getattr(r, "source", "") or "unknown",
+                                        score=score,
+                                        match=label,
+                                        date=getattr(r, "date", "") or "",
+                                    )
+                                )
+            else:
+                _ensure_driver()
+                for adapter in selenium_adapters:
+                    adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
+                    for query in query_terms:
+                        for loc in locations:
+                            try:
+                                _adapter_pause()
+                                rows = adapter.search(
+                                    driver,
+                                    query=query,
+                                    location=loc,
+                                    radius_km=radius_km,
+                                    limit=limit_per_site,
+                                )
+
+                                converted = 0
+                                for r in rows:
+                                    if not isinstance(r, (CHJobRow, ExtraJobRow)):
+                                        if not getattr(r, "title", None) or not getattr(
+                                            r, "link", None
+                                        ):
+                                            continue
+                                    score, label = _score_title(r.title)
+                                    all_jobs.append(
+                                        Job(
+                                            raw_title=getattr(r, "raw_title", "") or r.title,
+                                            title=r.title,
+                                            company=getattr(r, "company", ""),
+                                            location=getattr(r, "location", ""),
+                                            link=r.link,
+                                            source=adapter.source,
+                                            score=score,
+                                            match=label,
+                                            date=getattr(r, "date", "") or "",
+                                        )
+                                    )
+                                    converted += 1
+
+                                job_logger.info(
+                                    f"{adapter.source}: {converted} Roh-Treffer "
+                                    f"(query='{query}', loc='{loc}')"
+                                )
+
+                                if max_total and len(all_jobs) >= max_total * 2:
+                                    break
+                            except Exception as e:
+                                job_logger.warning(
+                                    f"Adapter {adapter.source} Fehler "
+                                    f"(query='{query}', loc='{loc}'): {e}"
+                                )
                         if max_total and len(all_jobs) >= max_total * 2:
                             break
-                    except Exception as e:
-                        job_logger.warning(
-                            f"Adapter {adapter.source} Fehler "
-                            f"(query='{query}', loc='{loc}'): {e}"
+                    if TIMING_ENABLED:
+                        adapter_totals[adapter.source.lower()] = (
+                            adapter_totals.get(adapter.source.lower(), 0.0)
+                            + (time.perf_counter() - adapter_start)
                         )
-                if max_total and len(all_jobs) >= max_total * 2:
-                    break
-            if TIMING_ENABLED:
-                adapter_totals[source] = (
-                    adapter_totals.get(source, 0.0)
-                    + (time.perf_counter() - adapter_start)
-                )
 
         if request_executor:
             for future in as_completed(request_futures):
@@ -1378,6 +1577,7 @@ def collect_jobs(
             for source, seconds in sorted(adapter_totals.items()):
                 _timing_log(f"adapter.{source}", seconds)
 
+        # Optional: eigene Karriere-Seiten scannen.
         if COMPANY_CAREERS_ENABLED and COMPANY_CAREER_URLS:
             try:
                 company_jobs = _collect_company_careers(
@@ -1390,7 +1590,8 @@ def collect_jobs(
 
     finally:
         try:
-            driver.quit()
+            if driver is not None:
+                driver.quit()
         except Exception:
             pass
 
@@ -1406,6 +1607,7 @@ def collect_jobs(
         TRANSIT_ENABLED and bool(TRANSIT_ORIGIN) and TRANSIT_MAX_MINUTES > 0
     )
 
+    # Alle Treffer filtern, anreichern und bewerten.
     for j in all_jobs:
         # Normalize jobs.ch/jobup multi-line titles into fields
         if (not j.company or not j.location) and (j.title or j.raw_title):
@@ -1479,6 +1681,7 @@ def collect_jobs(
         key = _norm_key(j.title, j.company, j.link)
         if key in seen:
             continue
+        # Detailseiten auf Blocklist und Kontakte scannen.
         if (
             DETAILS_BLOCKLIST_SCAN
             and j.link
@@ -1514,6 +1717,7 @@ def collect_jobs(
             if name:
                 j.contact_name = name
 
+        # Score-Booster (Ort/Commute) und Match-Klasse setzen.
         j.score += _location_boost(j.location, search_locs)
         if ALLOWED_LOCATIONS and allowed_match:
             j.score += ALLOWED_LOCATION_BOOST
@@ -1566,6 +1770,7 @@ def collect_jobs(
 
 
 def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:
+    # Textausgabe fuer CLI.
     out: List[str] = []
     for i, j in enumerate(jobs[:top], 1):
         if (not j.company or not j.location) and ("\n" in (j.raw_title or "") or "Arbeitsort" in (j.raw_title or "")):
@@ -1584,6 +1789,7 @@ def format_jobs_plain(jobs: List[Job], top: int = 20) -> str:
 
 
 def export_csv(rows: List[Job], path: str | None = None) -> None:
+    # CSV-Export fuer schnelle Sichtung.
     if not EXPORT_CSV:
         return
     out_path = path or EXPORT_CSV_PATH

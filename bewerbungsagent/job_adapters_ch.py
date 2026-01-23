@@ -11,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
+# Datentransfer-Objekt fuer Jobtreffer.
 @dataclass
 class JobRow:
     title: str
@@ -24,7 +25,7 @@ class JobRow:
     score: int = 0
 
 
-# robuster Cookie-Clicker (de/en/fr)
+# Robuster Cookie-Clicker (de/en/fr) fuer Consent-Banner.
 COOKIE_CLICK_JS = r"""
 (() => {
   const needles = [
@@ -51,10 +52,12 @@ COOKIE_CLICK_JS = r"""
 })();
 """
 
+# Maximalzahl Seiten pro Quelle (ENV steuerbar).
 COLLECT_MAX_PAGES = int(os.getenv("COLLECT_MAX_PAGES", "3") or 3)
 
 
 def _normalize_link(link: str) -> str:
+    # Tracking-Parameter entfernen, um Dedupe zu stabilisieren.
     """Dedupe: entferne Tracking-Query + Fragments."""
     if not link:
         return ""
@@ -66,6 +69,7 @@ def _normalize_link(link: str) -> str:
 
 
 def _is_detail_link(link: str) -> bool:
+    # Heuristik: Detailseiten erkennen.
     if not link:
         return False
     u = link.lower()
@@ -83,6 +87,7 @@ def _is_detail_link(link: str) -> bool:
     return False
 
 
+# Regex fuer unerwuenschte Zeilen (Label/Datum).
 _LINE_LABEL_RE = re.compile(r"(arbeitsort|pensum|vertragsart|einfach bewerben|neu)", re.IGNORECASE)
 _LINE_RELDATE_RE = re.compile(
     r"\b(heute|gestern|vorgestern|letzte woche|letzten monat|vor \d+\s*(tagen|wochen|monaten?))\b",
@@ -91,6 +96,7 @@ _LINE_RELDATE_RE = re.compile(
 
 
 def _parse_jsonld(html: str) -> List[dict]:
+    # JSON-LD JobPosting aus HTML extrahieren.
     out: List[dict] = []
     pattern = r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>'
     for m in re.finditer(pattern, html, re.S | re.I):
@@ -115,6 +121,7 @@ def _parse_jsonld(html: str) -> List[dict]:
 
 
 def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
+    # JSON-LD Items in JobRow-Liste ueberfuehren.
     rows: List[JobRow] = []
     for it in items:
         raw_title = (it.get("title") or "").strip()
@@ -162,12 +169,14 @@ def _to_jobrows(items: List[dict], source: str) -> List[JobRow]:
 
 
 def _extract_dom_links(driver, source_name: str, base_url: str) -> List[JobRow]:
+    # DOM-Fallback: Anchor-Tags nach Detailpfaden durchsuchen.
     """
     DOM-Scrape: sucht nach Anchor-Tags mit detail-typischen hrefs.
     Auch für client-side render.
     """
     rows: List[JobRow] = []
 
+    # Selektoren fuer typische Detail-Links.
     selectors = [
         'a[href*="/detail/"]',
         'a[href*="/jobs/detail/"]',
@@ -177,6 +186,7 @@ def _extract_dom_links(driver, source_name: str, base_url: str) -> List[JobRow]:
         'a[href*="/job/"]',
     ]
 
+    # Anchors fuer alle Selektoren einsammeln.
     anchors = []
     for sel in selectors:
         try:
@@ -184,6 +194,7 @@ def _extract_dom_links(driver, source_name: str, base_url: str) -> List[JobRow]:
         except Exception:
             continue
 
+    # Text/Link aus Anchors in JobRows umwandeln.
     for a in anchors:
         try:
             href = (a.get_attribute("href") or "").strip()
@@ -223,7 +234,7 @@ def _extract_dom_links(driver, source_name: str, base_url: str) -> List[JobRow]:
         except Exception:
             continue
 
-    # dedupe
+    # Dedupe nach normalisiertem Link.
     seen, out = set(), []
     for r in rows:
         key = _normalize_link(r.link)
@@ -235,10 +246,12 @@ def _extract_dom_links(driver, source_name: str, base_url: str) -> List[JobRow]:
 
 
 class JobsChAdapter:
+    # Selenium-Adapter fuer jobs.ch.
     source = "jobs.ch"
     BASE = "https://www.jobs.ch/de/stellenangebote/"
 
     def search(self, driver, query: str, location: str, radius_km: int, limit: Optional[int] = 30) -> Iterable[JobRow]:
+        # Seitenweise suchen und JobRows sammeln.
         params = {"term": query}
         if location:
             params["location"] = location  # konsistent zu Query-Builder
@@ -247,6 +260,7 @@ class JobsChAdapter:
         rows: List[JobRow] = []
         max_pages = COLLECT_MAX_PAGES if COLLECT_MAX_PAGES > 0 else 1
 
+        # Paginierung iterieren.
         for p in range(1, max_pages + 1):
             paged = url + f"&page={p}"
             try:
@@ -261,6 +275,7 @@ class JobsChAdapter:
                 except Exception:
                     pass
 
+                # Erst JSON-LD versuchen, dann DOM-Fallback.
                 html = driver.page_source or ""
                 page_rows = _to_jobrows(_parse_jsonld(html), self.source)
                 if not page_rows:
@@ -272,6 +287,7 @@ class JobsChAdapter:
             except Exception:
                 continue
 
+        # Ergebnisliste dedupen und limitieren.
         seen, out = set(), []
         for r in rows:
             key = _normalize_link(r.link)
@@ -285,10 +301,12 @@ class JobsChAdapter:
 
 
 class JobupAdapter:
+    # Selenium-Adapter fuer jobup.ch.
     source = "jobup.ch"
     BASE = "https://www.jobup.ch/de/jobs/"
 
     def search(self, driver, query: str, location: str, radius_km: int, limit: Optional[int] = 30) -> Iterable[JobRow]:
+        # Seitenweise suchen und JobRows sammeln.
         params = {"term": query}
         if location:
             params["location"] = location
@@ -297,6 +315,7 @@ class JobupAdapter:
         rows: List[JobRow] = []
         max_pages = COLLECT_MAX_PAGES if COLLECT_MAX_PAGES > 0 else 1
 
+        # Paginierung iterieren.
         for p in range(1, max_pages + 1):
             paged = url + f"&page={p}"
             try:
@@ -311,6 +330,7 @@ class JobupAdapter:
                 except Exception:
                     pass
 
+                # Erst JSON-LD versuchen, dann DOM-Fallback.
                 html = driver.page_source or ""
                 page_rows = _to_jobrows(_parse_jsonld(html), self.source)
                 if not page_rows:
@@ -322,6 +342,7 @@ class JobupAdapter:
             except Exception:
                 continue
 
+        # Ergebnisliste dedupen und limitieren.
         seen, out = set(), []
         for r in rows:
             key = _normalize_link(r.link)

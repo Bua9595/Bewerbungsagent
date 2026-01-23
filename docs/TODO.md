@@ -9,18 +9,22 @@
 - [x] Tracking-System grundlegend implementiert
 
 ## Phase 3: Erweiterte Automatisierung (IN ARBEIT)
-- [x] Enhanced Scheduling System implementieren (tägliche/wochentliche Job-Suche mit Fehlerbehandlung)
+- [~] Enhanced Scheduling System implementieren (basic implemented)
 - [x] Selenium Integration verbessern (Headless-Modus, Browser-Management, Error-Handling)
 - [x] E-Mail-Automatisierung implementieren (Job-Alerts und Benachrichtigungen)
 - [x] Umfassende Fehlerbehandlung und Logging hinzufügen (try-except, detailliertes Logging)
 - [x] Tracking-System erweitern (mehr Metadaten, bessere Organisation)
-- [x] Groq AI Integration für intelligente Bewerbungen
+- [ ] Groq AI Integration (config-ready)
 - [x] Konfiguration korrigiert (Variable-Namen konsistent gemacht)
+- [x] CLI modularisiert (tools/commands)
+- [x] Tests für Locking, UID, Reminder-Logik
+- [x] Doku synchronisiert (README, CODEMAP)
+- [x] pytest in CI
 - [ ] Vollständige Automatisierung testen (End-to-End Durchlauf)
 
 ## Implementierungsdetails Phase 3
 ### 1. Enhanced Scheduling
-- Robuste tägliche/wochentliche Planung
+- Robuste tägliche/wochentliche Planung (basic implemented)
 - Fehlerbehandlung bei Scheduling-Fehlern
 - Logging von Scheduling-Aktivitäten
 - Wiederholungsmechanismen bei Fehlern
@@ -29,6 +33,7 @@
 - Headless-Modus für Hintergrundbetrieb
 - Browser-Timeout-Management
 - Element-Wait-Strategien
+
 - Screenshot bei Fehlern für Debugging
 
 ### 3. Email Automation
@@ -54,7 +59,7 @@
 - Abhängigkeiten: `pip install -r requirements.txt`
 - .env prüfen (SMTP, E-Mail): `SENDER_EMAIL`, `SENDER_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`, `RECIPIENT_EMAILS`
 - Schnellcheck ohne Netzwerk: `python scripts/quick_check.py` (legt Vorlagen/Tracking an)
-- E-Mail-Test: `python scripts/test_email_config.py` (verbindet mit SMTP)
+- E-Mail-Test: `python tools/test_email_config.py` (verbindet mit SMTP)
 - Interaktiv starten: `python scripts/direkt_job_finder.py`
 
 ## SMTP-Hinweise

@@ -39,7 +39,7 @@ Stellen Sie sicher, dass die SMTP-Einstellungen korrekt sind:
 ## Test nach der Fehlerbehebung
 Führen Sie das Test-Skript erneut aus:
 ```bash
-python scripts/test_email_config.py
+python tools/test_email_config.py
 ```
 
 ## Gmail-Konfiguration mit OAuth2 (empfohlen)

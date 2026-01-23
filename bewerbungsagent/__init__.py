@@ -1,4 +1,5 @@
-﻿__all__ = [
+﻿# Paket-Exports fuer einfache Imports.
+__all__ = [
     "config",
     "email_automation",
     "job_adapters_ch",

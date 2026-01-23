@@ -12,6 +12,7 @@ from urllib.parse import quote_plus, urljoin, urlsplit, urlunsplit, parse_qsl, u
 import requests
 
 
+# DTO fuer Requests-basierte Jobtreffer.
 @dataclass
 class ExtraJobRow:
     title: str
@@ -23,8 +24,10 @@ class ExtraJobRow:
     source: str = "unknown"
 
 
+# Optionales Delay zwischen Requests (ENV).
 ADAPTER_REQUEST_DELAY = float(os.getenv("ADAPTER_REQUEST_DELAY", "0") or 0)
 
+# Standard-HTTP-Header fuer Requests.
 DEFAULT_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -35,6 +38,7 @@ DEFAULT_HEADERS = {
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
 }
 
+# Query-Parameter, die beim Dedupe entfernt werden.
 _TRACKING_QUERY_KEYS = {
     "fbclid",
     "gclid",
@@ -50,6 +54,7 @@ _TRACKING_QUERY_KEYS = {
 
 
 def _normalize_link(link: str) -> str:
+    # Tracking-Parameter entfernen, um Links vergleichbar zu machen.
     if not link:
         return ""
     try:
@@ -66,6 +71,7 @@ def _normalize_link(link: str) -> str:
 
 
 def _is_detail_link(link: str) -> bool:
+    # Heuristik: Detailseiten erkennen.
     if not link:
         return False
     u = link.lower()
@@ -87,6 +93,7 @@ def _is_detail_link(link: str) -> bool:
 
 
 class _LinkParser(HTMLParser):
+    # Minimaler Parser, der Links + Text sammelt.
     def __init__(self) -> None:
         super().__init__()
         self.links: List[tuple[str, str]] = []
@@ -123,6 +130,7 @@ def _fetch_html(
     timeout: float = 15,
     session: requests.Session | None = None,
 ) -> str:
+    # HTML abrufen (mit optionalem Delay).
     if ADAPTER_REQUEST_DELAY > 0:
         time.sleep(ADAPTER_REQUEST_DELAY)
     client = session or requests
@@ -132,6 +140,7 @@ def _fetch_html(
 
 
 def _parse_jsonld(html: str) -> List[dict]:
+    # JSON-LD JobPosting aus HTML extrahieren.
     out: List[dict] = []
     pattern = r'<script[^>]+type=["\\\']application/ld\+json["\\\'][^>]*>(.*?)</script>'
     for m in re.finditer(pattern, html, re.S | re.I):
@@ -156,6 +165,7 @@ def _parse_jsonld(html: str) -> List[dict]:
 
 
 def _jsonld_to_rows(items: Iterable[dict], source: str, fallback_location: str = "") -> List[ExtraJobRow]:
+    # JSON-LD Items in ExtraJobRow ueberfuehren.
     rows: List[ExtraJobRow] = []
     for it in items:
         title = (it.get("title") or it.get("jobTitle") or "").strip()
@@ -214,6 +224,7 @@ def _rows_from_links(
     fallback_location: str,
     limit: Optional[int],
 ) -> List[ExtraJobRow]:
+    # Fallback: Links im HTML scannen und in Rows umwandeln.
     parser = _LinkParser()
     parser.feed(html)
 
@@ -259,6 +270,7 @@ def _rows_from_links(
 
 
 class _BaseRequestsAdapter:
+    # Basisklasse fuer Requests-basierte Aggregator-Adapter.
     source = "unknown"
     base_url = ""
     domain_hint = ""
@@ -277,6 +289,7 @@ class _BaseRequestsAdapter:
         session: requests.Session | None = None,
         timeout: float = 15,
     ) -> List[ExtraJobRow]:
+        # Suche ausfuehren und JSON-LD bevorzugen.
         url = self.build_url(query, location, radius_km)
         try:
             html = _fetch_html(url, timeout=timeout, session=session)
@@ -298,6 +311,7 @@ class _BaseRequestsAdapter:
         )
 
 
+# Konkrete Adapter pro Quelle (Requests-basiert).
 class JobScout24Adapter(_BaseRequestsAdapter):
     source = "jobscout24"
     base_url = "https://www.jobscout24.ch/de/jobs/"

@@ -17,6 +17,7 @@ from .job_state import (
     parse_ts,
 )
 
+# Spaltenstruktur fuer Tracker-Export.
 TRACKER_HEADERS = [
     "job_uid",
     "status",
@@ -48,18 +49,22 @@ IGNORED_ACTIONS = {"ignored", "ignore", "skip", "no", "nein"}
 
 
 def get_tracker_path() -> Path:
+    # Pfad fuer Tracker-Datei (ENV ueberschreibbar).
     return Path(os.getenv("JOB_TRACKER_FILE", "generated/job_tracker.xlsx"))
 
 
 def _clean(value: Any) -> str:
+    # Werte als String normalisieren.
     return str(value or "").strip()
 
 
 def _is_xlsx(path: Path) -> bool:
+    # Dateityp anhand Endung bestimmen.
     return path.suffix.lower() == ".xlsx"
 
 
 def _normalize_erledigt(value: Any) -> str:
+    # Checkbox-/Boolean-Werte vereinheitlichen.
     raw = _clean(value)
     if not raw:
         return CHECKBOX_EMPTY
@@ -74,6 +79,7 @@ def _normalize_erledigt(value: Any) -> str:
 
 
 def load_tracker(path: Path) -> Dict[str, Dict[str, Any]]:
+    # Tracker aus CSV/XLSX laden (mit Legacy-Fallback).
     if not path.exists():
         if _is_xlsx(path):
             legacy = path.with_suffix(".csv")
@@ -86,6 +92,7 @@ def load_tracker(path: Path) -> Dict[str, Dict[str, Any]]:
 
 
 def _load_tracker_csv(path: Path) -> Dict[str, Dict[str, Any]]:
+    # CSV-Tracker lesen.
     with path.open("r", newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         if not reader.fieldnames or "job_uid" not in reader.fieldnames:
@@ -100,6 +107,7 @@ def _load_tracker_csv(path: Path) -> Dict[str, Dict[str, Any]]:
 
 
 def _load_tracker_xlsx(path: Path) -> Dict[str, Dict[str, Any]]:
+    # XLSX-Tracker lesen.
     wb = load_workbook(path, read_only=True, data_only=True)
     ws = wb.active
     iterator = ws.iter_rows(values_only=True)
@@ -131,6 +139,7 @@ def apply_tracker_marks(
     state: Dict[str, Dict[str, Any]],
     tracker_rows: Dict[str, Dict[str, Any]],
 ) -> int:
+    # Manuelle Tracker-Aktionen in den State uebernehmen.
     updates = 0
     stamp = now_iso()
     for uid, row in tracker_rows.items():
@@ -157,6 +166,7 @@ def apply_tracker_marks(
 
 
 def _sort_key(row: Dict[str, Any]) -> float:
+    # Sortierschluessel nach last_seen_at.
     last_seen = parse_ts(_clean(row.get("last_seen_at")))
     return last_seen.timestamp() if last_seen else 0.0
 
@@ -166,6 +176,7 @@ def build_tracker_rows(
     existing_rows: Dict[str, Dict[str, Any]] | None = None,
     include_closed: bool = False,
 ) -> list[Dict[str, Any]]:
+    # Tracker-Zeilen aus State generieren.
     existing_rows = existing_rows or {}
     rows: list[Dict[str, Any]] = []
     for uid, record in state.items():
@@ -217,6 +228,7 @@ def write_tracker(
     existing_rows: Dict[str, Dict[str, Any]] | None = None,
     include_closed: bool = False,
 ) -> None:
+    # Tracker in CSV/XLSX schreiben.
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = build_tracker_rows(state, existing_rows, include_closed)
     if _is_xlsx(path):
@@ -226,6 +238,7 @@ def write_tracker(
 
 
 def _write_tracker_csv(path: Path, rows: list[Dict[str, Any]]) -> None:
+    # CSV-Ausgabe.
     with path.open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=TRACKER_HEADERS)
         writer.writeheader()
@@ -233,6 +246,7 @@ def _write_tracker_csv(path: Path, rows: list[Dict[str, Any]]) -> None:
 
 
 def _write_tracker_xlsx(path: Path, rows: list[Dict[str, Any]]) -> None:
+    # XLSX-Ausgabe mit Validierung fuer Checkboxen.
     wb = Workbook()
     ws = wb.active
     ws.title = "job_tracker"

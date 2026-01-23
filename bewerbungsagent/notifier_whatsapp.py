@@ -2,6 +2,7 @@ import os
 
 import requests
 
+# Feature-Flag und Zugangsdaten aus ENV.
 ENABLED = str(os.getenv("WHATSAPP_ENABLED", "false")).lower() in {
     "1",
     "true",
@@ -17,6 +18,7 @@ TO = os.getenv("WHATSAPP_TO", "")
 
 
 def send_whatsapp(text: str) -> bool:
+    # Nachricht via WhatsApp Cloud API senden.
     if not ENABLED:
         return False
     if not (TOKEN and PHONE_ID and TO):

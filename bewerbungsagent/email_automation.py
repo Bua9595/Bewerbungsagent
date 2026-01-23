@@ -13,9 +13,8 @@ from .logger import job_logger
 from .job_text_utils import extract_from_multiline_title
 
 
-
-
 def _job_to_dict(job: Any) -> Dict[str, Any]:
+    # Job-Objekt robust in Dict normalisieren.
     """Normalize JobRow/Job dataclass oder dict -> dict mit Standardkeys."""
     if isinstance(job, dict):
         return dict(job)
@@ -58,11 +57,13 @@ def _job_to_dict(job: Any) -> Dict[str, Any]:
 
 
 def _escape(val: Any) -> str:
+    # HTML-escaping fuer Texte.
     s = str(val or "")
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _normalize_job(job: Any) -> Dict[str, Any]:
+    # Felder fuer Mail-Ausgabe vereinheitlichen.
     data = _job_to_dict(job)
 
     raw_title = (
@@ -122,6 +123,7 @@ def _normalize_job(job: Any) -> Dict[str, Any]:
 
 class EmailAutomation:
     def __init__(self):
+        # SMTP- und Empfaenger-Config laden.
         self.smtp_server = config.SMTP_SERVER
         self.smtp_port = config.SMTP_PORT
         self.sender_email = config.SENDER_EMAIL
@@ -129,6 +131,7 @@ class EmailAutomation:
         self.recipient_emails = config.RECIPIENT_EMAILS
 
     def send_job_alert(self, new_jobs, reminder_jobs=None):
+        # Job-Alert-Mail (neu + Reminder) senden.
         """Send alert for new job opportunities and reminders."""
         reminder_jobs = reminder_jobs or []
         if not new_jobs and not reminder_jobs:
@@ -147,6 +150,7 @@ class EmailAutomation:
         return sent
 
     def send_weekly_summary(self, stats):
+        # Woechentliche Statistik-Mail.
         """Send weekly summary of job search activities."""
         if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
             return False
@@ -158,6 +162,7 @@ class EmailAutomation:
         return self._send_email(subject, body)
 
     def send_error_notification(self, error_type, error_message, traceback=None):
+        # Fehlermeldung per Mail senden.
         """Send notification for critical errors."""
         if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
             return False
@@ -169,11 +174,13 @@ class EmailAutomation:
         return self._send_email(subject, body, priority="high")
 
     def _create_job_alert_body(self, new_jobs, reminder_jobs):
+        # HTML-Body fuer Job-Alert bauen.
         new_norm = [_normalize_job(j) for j in new_jobs]
         reminder_norm = [_normalize_job(j) for j in reminder_jobs]
 
         max_jobs = int(getattr(config, "EMAIL_MAX_JOBS", 200) or 200)
 
+        # Render-Helfer fuer HTML-Liste.
         def _render_items(items):
             items_html = ""
             for job in items:
@@ -253,6 +260,7 @@ class EmailAutomation:
         return body
 
     def _create_weekly_summary_body(self, stats):
+        # HTML-Body fuer Wochenzusammenfassung.
         body = f"""
         <html>
         <body>
@@ -272,6 +280,7 @@ class EmailAutomation:
         return body
 
     def _create_error_body(self, error_type, error_message, traceback):
+        # HTML-Body fuer Fehlermeldung.
         body = f"""
         <html>
         <body>
@@ -295,6 +304,7 @@ class EmailAutomation:
         return body
 
     def _send_email(self, subject, body, priority="normal", attachment=None):
+        # SMTP-Versand mit optionalem Attachment.
         """Send email with optional attachment."""
         if not getattr(config, "EMAIL_NOTIFICATIONS_ENABLED", True):
             job_logger.info("Email sending skipped: disabled via EMAIL_NOTIFICATIONS_ENABLED")
@@ -336,6 +346,7 @@ class EmailAutomation:
             return False
 
     def _send_whatsapp_summary(self, new_jobs, reminder_jobs) -> None:
+        # Kurze WhatsApp-Zusammenfassung senden (optional).
         try:
             from .notifier_whatsapp import send_whatsapp
         except Exception as e:
@@ -355,5 +366,5 @@ class EmailAutomation:
             job_logger.warning(f"WhatsApp Versand fehlgeschlagen: {e}")
 
 
-# Global email instance
+# Globale Email-Automation Instanz.
 email_automation = EmailAutomation()

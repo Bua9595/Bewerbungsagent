@@ -24,6 +24,7 @@ from .job_state import (
 )
 from .job_tracker import get_tracker_path, load_tracker, write_tracker
 
+# Basisverzeichnis und erlaubte Dokument-Pfade.
 ROOT_DIR = Path.cwd().resolve()
 ALLOWED_DOC_DIRS = [
     ROOT_DIR / "out",
@@ -31,6 +32,7 @@ ALLOWED_DOC_DIRS = [
 ]
 ALLOWED_DOC_SUFFIXES = {".docx", ".pdf"}
 
+# Eingebettete HTML/JS UI fuer den Tracker.
 HTML_PAGE = """<!doctype html>
 <html lang="de">
 <head>
@@ -790,6 +792,7 @@ HTML_PAGE = """<!doctype html>
 
 
 def _status_for_open(record: Dict[str, Any]) -> str:
+    # Offen-Status anhand last_sent_at bestimmen.
     return STATUS_NOTIFIED if record.get("last_sent_at") else STATUS_NEW
 
 
@@ -797,6 +800,7 @@ UI_HISTORY_DAYS = int(os.getenv("TRACKER_UI_DAYS", "60") or 60)
 
 
 def _normalize_text(value: str) -> str:
+    # Text normalisieren (lowercase, ohne diakritische Zeichen).
     text = (value or "").lower()
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -806,6 +810,7 @@ def _normalize_text(value: str) -> str:
 
 
 def _parse_commute_map(raw: str) -> list[tuple[str, int]]:
+    # Pendelzeiten-Map aus ENV-String parsen.
     if not raw:
         return []
     items: list[tuple[str, int]] = []
@@ -835,6 +840,7 @@ COMMUTE_MINUTES = _parse_commute_map(os.getenv("COMMUTE_MINUTES", "") or "")
 
 
 def _commute_minutes_from_text(value: str) -> int | None:
+    # Pendelzeit aus Text ueber Keywords ableiten.
     if not value or not COMMUTE_MINUTES:
         return None
     normalized = _normalize_text(value)
@@ -845,6 +851,7 @@ def _commute_minutes_from_text(value: str) -> int | None:
 
 
 def _commute_minutes_for_record(record: Dict[str, Any]) -> int | None:
+    # Pendelzeit aus Record-Feldern ableiten.
     raw = record.get("commute_min")
     if raw not in (None, ""):
         try:
@@ -864,6 +871,7 @@ def _commute_minutes_for_record(record: Dict[str, Any]) -> int | None:
 
 
 def _safe_doc_path(path_value: str) -> Path | None:
+    # Pfad validieren (nur erlaubte Verzeichnisse/Endungen).
     if not path_value:
         return None
     raw = Path(path_value)
@@ -884,6 +892,7 @@ def _safe_doc_path(path_value: str) -> Path | None:
 
 
 def _pick_application_doc(record: Dict[str, Any]) -> Path | None:
+    # Passende Bewerbungsdatei fuer Record finden.
     candidates = [
         record.get("application_doc_archived"),
         record.get("application_doc"),
@@ -896,6 +905,7 @@ def _pick_application_doc(record: Dict[str, Any]) -> Path | None:
 
 
 def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
+    # Jobliste fuer UI mit Filter/Counts vorbereiten.
     state = load_state()
     items: List[Dict[str, Any]] = []
     counts = {
@@ -967,6 +977,7 @@ def _collect_jobs(include_done: bool, include_closed: bool) -> Dict[str, Any]:
 
 class TrackerHandler(BaseHTTPRequestHandler):
     def _send_json(self, data: Dict[str, Any], status: int = 200) -> None:
+        # JSON-Response senden.
         payload = json.dumps(data).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -975,6 +986,7 @@ class TrackerHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _send_file(self, path: Path) -> None:
+        # Datei-Download ausliefern.
         suffix = path.suffix.lower()
         if suffix == ".pdf":
             content_type = "application/pdf"
@@ -995,6 +1007,7 @@ class TrackerHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def _send_html(self, html: str) -> None:
+        # HTML-Response senden.
         payload = html.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1003,6 +1016,7 @@ class TrackerHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self) -> None:
+        # API-GET Endpunkte bedienen.
         parsed = urlparse(self.path)
         if parsed.path in ("/", "/index.html"):
             self._send_html(HTML_PAGE)
@@ -1039,6 +1053,7 @@ class TrackerHandler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self) -> None:
+        # API-POST Endpunkte bedienen.
         parsed = urlparse(self.path)
         length = int(self.headers.get("Content-Length", 0))
         raw = self.rfile.read(length) if length else b"{}"
@@ -1089,10 +1104,12 @@ class TrackerHandler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def log_message(self, format: str, *args: Any) -> None:
+        # Standard-HTTP-Logging unterdruecken.
         return
 
 
 def run_tracker_ui(host: str = "127.0.0.1", port: int = 8765, open_browser: bool = False) -> None:
+    # Lokalen HTTP-Server fuer Tracker-UI starten.
     server = ThreadingHTTPServer((host, port), TrackerHandler)
     url = f"http://{host}:{port}/"
     print(f"Tracker UI laeuft: {url}")
