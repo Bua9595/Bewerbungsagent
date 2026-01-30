@@ -26,7 +26,7 @@ class JobFinderLogger:
         )
 
         # Console-Handler.
-        console_handler = logging.StreamHandler()
+        console_handler = logging.StreamHandler() if config.LOG_TO_CONSOLE else None
 
         # Einheitliches Format fuer alle Handler.
         formatter = logging.Formatter(
@@ -35,12 +35,14 @@ class JobFinderLogger:
         )
 
         file_handler.setFormatter(formatter)
-        console_handler.setFormatter(formatter)
+        if console_handler:
+            console_handler.setFormatter(formatter)
 
         # Doppelte Handler bei Re-Import vermeiden.
         if not self.logger.handlers:
             self.logger.addHandler(file_handler)
-            self.logger.addHandler(console_handler)
+            if console_handler:
+                self.logger.addHandler(console_handler)
 
     def get_logger(self) -> logging.Logger:
         # Zugriff auf den konfigurierten Logger.

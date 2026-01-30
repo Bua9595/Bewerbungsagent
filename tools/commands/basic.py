@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from bewerbungsagent.job_text_utils import extract_from_multiline_title
+from tools.common import parse_sources
 
 
 def env_check(_args=None) -> None:
@@ -53,10 +54,11 @@ def email_test(_args=None) -> None:
     raise SystemExit(0 if success else 1)
 
 
-def list_jobs(_args=None) -> None:
+def list_jobs(args=None) -> None:
     from bewerbungsagent.job_collector import collect_jobs, export_csv, export_json
 
-    jobs = collect_jobs()
+    sources = parse_sources(getattr(args, "source", None))
+    jobs = collect_jobs(sources=sources or None)
     if not jobs:
         print("Keine Treffer. CSV/Mail uebersprungen.")
         return

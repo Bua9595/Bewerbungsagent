@@ -51,3 +51,15 @@ def score_value(value: Any) -> float:
         return float(value)
     except Exception:
         return 0.0
+
+
+def parse_sources(values: list[str] | None) -> list[str]:
+    if not values:
+        return []
+    out: list[str] = []
+    for raw in values:
+        for part in (raw or "").split(","):
+            item = part.strip()
+            if item:
+                out.append(item)
+    return out

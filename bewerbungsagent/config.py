@@ -89,6 +89,7 @@ class Config:
         self.LOG_LEVEL = "INFO"
 
         self.LOG_FILE = "job_finder.log"
+        self.LOG_TO_CONSOLE = True
 
 
 
@@ -290,6 +291,7 @@ class Config:
         # Logging aus ENV
 
         self.LOG_LEVEL = os.getenv("LOG_LEVEL", self.LOG_LEVEL)
+        self.LOG_FILE = os.getenv("LOG_FILE", self.LOG_FILE)
 
 
 
@@ -405,6 +407,10 @@ class Config:
                 return default
 
             return str(val).strip().lower() in {"1", "true", "t", "yes", "y", "ja", "j"}
+
+        self.LOG_TO_CONSOLE = _env_bool(
+            "LOG_TO_CONSOLE", getattr(self, "LOG_TO_CONSOLE", True)
+        )
 
 
 

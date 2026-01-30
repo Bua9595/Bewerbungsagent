@@ -158,6 +158,41 @@ def _normalize_text(value: str) -> str:
     return text
 
 
+_SOURCE_ALIASES = {
+    "jobs": "jobs.ch",
+    "jobs.ch": "jobs.ch",
+    "jobup": "jobup.ch",
+    "jobup.ch": "jobup.ch",
+    "jobscout24": "jobscout24",
+    "jobscout24.ch": "jobscout24",
+    "jobwinner": "jobwinner",
+    "jobwinner.ch": "jobwinner",
+    "monster": "monster",
+    "monster.ch": "monster",
+    "careerjet": "careerjet",
+    "careerjet.ch": "careerjet",
+    "jobrapido": "jobrapido",
+    "jobrapido.com": "jobrapido",
+    "jooble": "jooble",
+    "jooble.org": "jooble",
+    "jora": "jora",
+    "jora.com": "jora",
+    "indeed": "indeed",
+    "indeed.ch": "indeed",
+    "indeed.com": "indeed",
+}
+
+
+def _normalize_source_name(value: str) -> str:
+    raw = (value or "").strip().lower()
+    if not raw:
+        return ""
+    if "://" in raw:
+        raw = urlparse(raw).netloc or raw
+    raw = raw.replace("www.", "").strip().strip("/")
+    return _SOURCE_ALIASES.get(raw, raw)
+
+
 def _parse_commute_map(raw: str) -> list[tuple[str, int]]:
     # Pendelzeiten-Map aus ENV-String parsen.
     if not raw:
@@ -420,7 +455,6 @@ STRICT_LOCATION_FILTER = str(
     os.getenv("STRICT_LOCATION_FILTER", "true")
 ).lower() in TRUTHY
 ADAPTER_REQUEST_DELAY = float(os.getenv("ADAPTER_REQUEST_DELAY", "0") or 0)
-SELENIUM_WORKERS = int(os.getenv("SELENIUM_WORKERS", "1") or 1)
 REQUESTS_ADAPTER_WORKERS = int(os.getenv("REQUESTS_ADAPTER_WORKERS", "6") or 6)
 REQUESTS_ADAPTER_TIMEOUT = float(os.getenv("REQUESTS_ADAPTER_TIMEOUT", "15") or 15)
 EMPTY_SEARCH_TTL_HOURS = float(os.getenv("EMPTY_SEARCH_TTL_HOURS", "0") or 0)
@@ -428,6 +462,8 @@ EMPTY_SEARCH_CACHE_PATH = Path(
     os.getenv("EMPTY_SEARCH_CACHE_PATH", "generated/empty_search_cache.json")
 )
 TIMING_ENABLED = str(os.getenv("TIMING_ENABLED", "false")).lower() in TRUTHY
+FILTER_STATS = str(os.getenv("FILTER_STATS", "false")).lower() in TRUTHY
+SELENIUM_WORKERS = int(os.getenv("SELENIUM_WORKERS", "1") or 1)
 SELENIUM_WORKERS_RECOMMENDED_MAX = 3
 ALLOWED_LOCATION_BOOST = int(os.getenv("ALLOWED_LOCATION_BOOST", "2") or 2)
 ALLOWED_LOCATIONS = {
@@ -494,15 +530,15 @@ AGGREGATOR_VALIDATE_MAX_BYTES = int(
     os.getenv("AGGREGATOR_VALIDATE_MAX_BYTES", "20000") or 20000
 )
 DISABLED_SOURCES = {
-    x.strip().lower()
+    _normalize_source_name(x)
     for x in (os.getenv("DISABLED_SOURCES", "") or "").split(",")
-    if x.strip()
+    if _normalize_source_name(x)
 }
 BLOCKED_SOURCES = DISABLED_SOURCES | (
     set() if ALLOW_AGGREGATORS else AGGREGATOR_SOURCES
 )
 ENABLED_SOURCES = {
-    x.strip().lower()
+    _normalize_source_name(x)
     for x in (
         os.getenv(
             "ENABLED_SOURCES",
@@ -510,7 +546,7 @@ ENABLED_SOURCES = {
         )
         or "jobs.ch,jobup.ch,jobscout24,indeed,monster"
     ).split(",")
-    if x.strip()
+    if _normalize_source_name(x)
 }
 if BLOCKED_SOURCES:
     ENABLED_SOURCES = {s for s in ENABLED_SOURCES if s not in BLOCKED_SOURCES}
@@ -522,9 +558,9 @@ MAX_QUERY_TERMS = int(os.getenv("MAX_QUERY_TERMS", "8") or 8)
 QUERY_BATCH_SIZE = int(os.getenv("QUERY_BATCH_SIZE", "1") or 1)
 QUERY_BATCH_JOINER = os.getenv("QUERY_BATCH_JOINER", " OR ")
 QUERY_BATCH_SOURCES = {
-    x.strip().lower()
+    _normalize_source_name(x)
     for x in (os.getenv("QUERY_BATCH_SOURCES", "") or "").split(",")
-    if x.strip()
+    if _normalize_source_name(x)
 }
 EXTRA_QUERY_TERMS = [
     x.strip()
@@ -544,6 +580,21 @@ DETAILS_BLOCKLIST_MAX_JOBS = int(
 )
 DETAILS_BLOCKLIST_TIMEOUT = float(
     os.getenv("DETAILS_BLOCKLIST_TIMEOUT", "12") or 12
+)
+DETAILS_INCLUDE_SCAN = str(
+    os.getenv("DETAILS_INCLUDE_SCAN", "false")
+).lower() in TRUTHY
+DETAILS_INCLUDE_MAX_BYTES = int(
+    os.getenv("DETAILS_INCLUDE_MAX_BYTES", DETAILS_BLOCKLIST_MAX_BYTES)
+    or DETAILS_BLOCKLIST_MAX_BYTES
+)
+DETAILS_INCLUDE_MAX_JOBS = int(
+    os.getenv("DETAILS_INCLUDE_MAX_JOBS", DETAILS_BLOCKLIST_MAX_JOBS)
+    or DETAILS_BLOCKLIST_MAX_JOBS
+)
+DETAILS_INCLUDE_TIMEOUT = float(
+    os.getenv("DETAILS_INCLUDE_TIMEOUT", DETAILS_BLOCKLIST_TIMEOUT)
+    or DETAILS_BLOCKLIST_TIMEOUT
 )
 DETAILS_BLOCKLIST_SKIP_DOMAINS = {
     x.strip().lower()
@@ -580,6 +631,8 @@ TRANSIT_TIMEOUT = float(os.getenv("TRANSIT_TIMEOUT", "12") or 12)
 
 # In-Memory-Caches fuer Detail-Scans und Checks.
 DETAILS_BLOCKLIST_CACHE: dict[str, bool] = {}
+DETAILS_INCLUDE_CACHE: dict[str, bool] = {}
+DETAILS_TEXT_CACHE: dict[str, str] = {}
 DETAILS_CONTACT_CACHE: dict[str, tuple[str, str]] = {}
 TRANSIT_CACHE: dict[tuple[str, str, str, str], int | None] = {}
 AGGREGATOR_LINK_CACHE: dict[str, bool] = {}
@@ -790,7 +843,13 @@ def _has_required_keywords(job: Job, required: set[str]) -> bool:
     if not required:
         return True
     blob = " ".join(
-        [job.title or "", job.raw_title or "", job.company or "", job.location or ""]
+        [
+            job.title or "",
+            job.raw_title or "",
+            job.company or "",
+            job.location or "",
+            job.link or "",
+        ]
     )
     normalized = _normalize_text(blob)
     if not normalized:
@@ -1016,29 +1075,78 @@ def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
         return False
     if url in DETAILS_BLOCKLIST_CACHE:
         return DETAILS_BLOCKLIST_CACHE[url]
-    if _is_skipped_detail_domain(url):
+    normalized = _detail_page_text(
+        url,
+        timeout=DETAILS_BLOCKLIST_TIMEOUT,
+        max_bytes=DETAILS_BLOCKLIST_MAX_BYTES,
+    )
+    if not normalized:
         DETAILS_BLOCKLIST_CACHE[url] = False
         return False
+    blocked_found = _contains_blocked_terms(normalized, blocked)
+    DETAILS_BLOCKLIST_CACHE[url] = blocked_found
+    return blocked_found
+
+
+def _detail_page_text(url: str, timeout: float, max_bytes: int) -> str:
+    # Detailseite als normalisierten Text cachen.
+    if not url:
+        return ""
+    if url in DETAILS_TEXT_CACHE:
+        return DETAILS_TEXT_CACHE[url]
+    if _is_skipped_detail_domain(url):
+        DETAILS_TEXT_CACHE[url] = ""
+        return ""
     try:
         resp = requests.get(
             url,
             headers={"User-Agent": "Bewerbungsagent/1.0 (+detail-scan)"},
-            timeout=DETAILS_BLOCKLIST_TIMEOUT,
+            timeout=timeout,
         )
         resp.raise_for_status()
         text = resp.text or ""
-        if DETAILS_BLOCKLIST_MAX_BYTES and len(text) > DETAILS_BLOCKLIST_MAX_BYTES:
-            text = text[:DETAILS_BLOCKLIST_MAX_BYTES]
+        if max_bytes and len(text) > max_bytes:
+            text = text[:max_bytes]
         text = _SCRIPT_STYLE_RE.sub(" ", text)
         text = _TAG_RE.sub(" ", text)
         normalized = _normalize_text(text)
-        blocked_found = _contains_blocked_terms(normalized, blocked)
-        DETAILS_BLOCKLIST_CACHE[url] = blocked_found
-        return blocked_found
+        DETAILS_TEXT_CACHE[url] = normalized
+        return normalized
     except Exception as e:
         job_logger.warning(f"Detail-Scan Fehler ({url}): {e}")
-        DETAILS_BLOCKLIST_CACHE[url] = False
+        DETAILS_TEXT_CACHE[url] = ""
+        return ""
+
+
+def _detail_page_has_required_terms(url: str, required: set[str]) -> bool:
+    # Detailseite auf Required-Keywords pruefen (mit Cache).
+    if not url or not required:
         return False
+    if url in DETAILS_INCLUDE_CACHE:
+        return DETAILS_INCLUDE_CACHE[url]
+    normalized = _detail_page_text(
+        url,
+        timeout=DETAILS_INCLUDE_TIMEOUT,
+        max_bytes=DETAILS_INCLUDE_MAX_BYTES,
+    )
+    if not normalized:
+        DETAILS_INCLUDE_CACHE[url] = False
+        return False
+    tokens = set(normalized.split())
+    found = False
+    for term in required:
+        if not term:
+            continue
+        if len(term) <= 2:
+            if term in tokens:
+                found = True
+                break
+        else:
+            if term in normalized:
+                found = True
+                break
+    DETAILS_INCLUDE_CACHE[url] = found
+    return found
 
 
 def _is_skipped_detail_domain(url: str) -> bool:
@@ -1214,6 +1322,7 @@ def _timing_log(label: str, seconds: float, extra: str = "") -> None:
 def collect_jobs(
     limit_per_site: int | None = None,
     max_total: int | None = None,
+    sources: list[str] | None = None,
 ) -> List[Job]:
     total_start = time.perf_counter() if TIMING_ENABLED else 0.0
     # Hauptsammlung: alle Quellen durchsuchen und filtern.
@@ -1253,6 +1362,11 @@ def collect_jobs(
         max(1, QUERY_BATCH_SIZE),
         QUERY_BATCH_JOINER,
     )
+    source_filter = None
+    if sources:
+        source_filter = {
+            _normalize_source_name(s) for s in sources if _normalize_source_name(s)
+        }
     empty_cache_ttl_sec = max(0.0, EMPTY_SEARCH_TTL_HOURS * 3600.0)
     empty_cache: dict[str, float] = {}
     empty_cache_updates: dict[str, float] = {}
@@ -1290,6 +1404,7 @@ def collect_jobs(
             indeed_url
             and (not ENABLED_SOURCES or "indeed" in ENABLED_SOURCES)
             and "indeed" not in BLOCKED_SOURCES
+            and (not source_filter or "indeed" in source_filter)
         ):
             try:
                 _ensure_driver()
@@ -1350,10 +1465,12 @@ def collect_jobs(
                 )
 
         def _allowed(adapter) -> bool:
-            source = adapter.source.lower()
+            source = _normalize_source_name(adapter.source)
             if source in BLOCKED_SOURCES:
                 return False
             if ENABLED_SOURCES and source not in ENABLED_SOURCES:
+                return False
+            if source_filter and source not in source_filter:
                 return False
             return True
 
@@ -1469,7 +1586,7 @@ def collect_jobs(
 
         if request_adapters:
             for adapter in request_adapters:
-                source = adapter.source.lower()
+                source = _normalize_source_name(adapter.source)
                 source_queries = (
                     batched_queries
                     if QUERY_BATCH_SIZE > 1 and source in QUERY_BATCH_SOURCES
@@ -1511,7 +1628,7 @@ def collect_jobs(
         if selenium_adapters:
             selenium_tasks: list[tuple[str, str, str]] = []
             for adapter in selenium_adapters:
-                source = adapter.source.lower()
+                source = _normalize_source_name(adapter.source)
                 for query in query_terms:
                     for loc in locations:
                         if empty_cache_ttl_sec > 0:
@@ -1551,7 +1668,9 @@ def collect_jobs(
                         for error in result.get("errors", []):
                             job_logger.warning("Selenium Worker Fehler: %s", error)
                         for payload in result.get("results", []):
-                            source = payload.get("source", "unknown")
+                            source = _normalize_source_name(
+                                payload.get("source", "unknown")
+                            )
                             query = payload.get("query", "")
                             loc = payload.get("loc", "")
                             rows = payload.get("rows", [])
@@ -1560,8 +1679,8 @@ def collect_jobs(
                             if empty_cache_ttl_sec > 0 and converted == 0:
                                 key = _empty_cache_key(source, query, loc, radius_km)
                                 empty_cache_updates[key] = time.time()
-                            adapter_totals[source.lower()] = (
-                                adapter_totals.get(source.lower(), 0.0) + duration
+                            adapter_totals[source] = (
+                                adapter_totals.get(source, 0.0) + duration
                             )
             elif selenium_tasks:
                 _ensure_driver()
@@ -1571,7 +1690,7 @@ def collect_jobs(
                         for loc in locations:
                             if empty_cache_ttl_sec > 0:
                                 key = _empty_cache_key(
-                                    adapter.source.lower(),
+                                    _normalize_source_name(adapter.source),
                                     query,
                                     loc,
                                     radius_km,
@@ -1597,7 +1716,7 @@ def collect_jobs(
                                 )
                                 if empty_cache_ttl_sec > 0 and converted == 0:
                                     key = _empty_cache_key(
-                                        adapter.source.lower(),
+                                        _normalize_source_name(adapter.source),
                                         query,
                                         loc,
                                         radius_km,
@@ -1614,8 +1733,8 @@ def collect_jobs(
                         if max_total and len(all_jobs) >= max_total * 2:
                             break
                     if TIMING_ENABLED:
-                        adapter_totals[adapter.source.lower()] = (
-                            adapter_totals.get(adapter.source.lower(), 0.0)
+                        adapter_totals[_normalize_source_name(adapter.source)] = (
+                            adapter_totals.get(_normalize_source_name(adapter.source), 0.0)
                             + (time.perf_counter() - adapter_start)
                         )
 
@@ -1695,9 +1814,18 @@ def collect_jobs(
     contact_scans = 0
     detail_scan_time = 0.0
     contact_scan_time = 0.0
+    include_scans = 0
+    include_scan_time = 0.0
     transit_enabled = (
         TRANSIT_ENABLED and bool(TRANSIT_ORIGIN) and TRANSIT_MAX_MINUTES > 0
     )
+    filter_stats: dict[str, int] = {}
+    if FILTER_STATS:
+        filter_stats["total"] = len(all_jobs)
+
+    def _bump(key: str) -> None:
+        if FILTER_STATS:
+            filter_stats[key] = filter_stats.get(key, 0) + 1
 
     # Alle Treffer filtern, anreichern und bewerten.
     for j in all_jobs:
@@ -1723,9 +1851,11 @@ def collect_jobs(
         is_remote = _is_remote(j)
 
         if is_remote and not ALLOW_REMOTE:
+            _bump("remote_blocked")
             continue
 
         if HARD_ALLOWED_LOCATIONS and not hard_allowed_match:
+            _bump("hard_location")
             continue
 
         if transit_enabled and not is_remote:
@@ -1737,22 +1867,46 @@ def collect_jobs(
                     transit_minutes is None
                     or transit_minutes > TRANSIT_MAX_MINUTES
                 ):
+                    _bump("transit_blocked")
                     continue
             else:
                 if STRICT_LOCATION_FILTER and not (local_match or allowed_match):
+                    _bump("strict_location")
                     continue
         elif STRICT_LOCATION_FILTER:
             if search_locs and not local_match:
+                _bump("local_mismatch")
                 continue
             if ALLOWED_LOCATIONS and not allowed_match:
+                _bump("allowed_mismatch")
                 continue
 
         if not _has_required_keywords(j, INCLUDE_KEYWORDS):
-            continue
+            if (
+                DETAILS_INCLUDE_SCAN
+                and j.link
+                and include_scans < DETAILS_INCLUDE_MAX_JOBS
+            ):
+                if j.link not in DETAILS_INCLUDE_CACHE:
+                    include_scans += 1
+                scan_start = time.perf_counter() if TIMING_ENABLED else 0.0
+                if _detail_page_has_required_terms(j.link, INCLUDE_KEYWORDS):
+                    if TIMING_ENABLED:
+                        include_scan_time += time.perf_counter() - scan_start
+                else:
+                    if TIMING_ENABLED:
+                        include_scan_time += time.perf_counter() - scan_start
+                    _bump("include_keywords")
+                    continue
+            else:
+                _bump("include_keywords")
+                continue
 
         if (j.company or "").lower() in BLACKLIST:
+            _bump("company_blacklist")
             continue
         if _has_blocked_keywords(j, BLOCKLIST_TERMS):
+            _bump("blocked_keywords")
             continue
 
         if (
@@ -1761,6 +1915,7 @@ def collect_jobs(
             and j.source in AGGREGATOR_SOURCES
             and not _aggregator_link_ok(j.link)
         ):
+            _bump("aggregator_link")
             continue
 
         if j.source in ("jobs.ch", "jobup.ch"):
@@ -1768,10 +1923,12 @@ def collect_jobs(
             tail = "/".join(j.link.rstrip("/").split("/")[-2:])
             is_category = "stellenangebote" in tail and "detail" not in tail
             if (not link_has_digit) or is_category:
+                _bump("category_link")
                 continue
 
         key = _norm_key(j.title, j.company, j.link)
         if key in seen:
+            _bump("duplicate")
             continue
         # Detailseiten auf Blocklist und Kontakte scannen.
         if (
@@ -1788,6 +1945,7 @@ def collect_jobs(
                 if _detail_page_has_blocked_terms(j.link, BLOCKLIST_TERMS):
                     if TIMING_ENABLED:
                         detail_scan_time += time.perf_counter() - scan_start
+                    _bump("detail_blocklist")
                     continue
                 if TIMING_ENABLED:
                     detail_scan_time += time.perf_counter() - scan_start
@@ -1830,12 +1988,15 @@ def collect_jobs(
             j.fit = compute_fit(j.match, j.score, MIN_SCORE_APPLY)
 
         unique.append(j)
+        _bump("kept")
 
     if TIMING_ENABLED:
         if detail_scans:
             _timing_log("detail_scan", detail_scan_time, f"count={detail_scans}")
         if contact_scans:
             _timing_log("contact_scan", contact_scan_time, f"count={contact_scans}")
+        if include_scans:
+            _timing_log("include_scan", include_scan_time, f"count={include_scans}")
     if empty_cache_ttl_sec > 0:
         if empty_cache_updates:
             empty_cache.update(empty_cache_updates)
@@ -1850,6 +2011,27 @@ def collect_jobs(
             f"skip={empty_cache_skips} add={len(empty_cache_updates)} "
             f"keep={len(empty_cache)}"
         )
+    if FILTER_STATS:
+        kept = filter_stats.get("kept", 0)
+        total = filter_stats.get("total", len(all_jobs))
+        drops = {
+            k: v
+            for k, v in filter_stats.items()
+            if k not in {"total", "kept"} and v
+        }
+        drop_summary = ", ".join(
+            f"{k}={v}"
+            for k, v in sorted(drops.items(), key=lambda item: item[1], reverse=True)
+        )
+        if drop_summary:
+            job_logger.info(
+                "filter-stats total=%s kept=%s drops=%s",
+                total,
+                kept,
+                drop_summary,
+            )
+        else:
+            job_logger.info("filter-stats total=%s kept=%s", total, kept)
 
     unique.sort(key=lambda x: x.score, reverse=True)
     if max_total:

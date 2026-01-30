@@ -59,10 +59,22 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("start")
     sub.add_parser("open")
     sub.add_parser("email-test")
-    sub.add_parser("list")
+    list_cmd = sub.add_parser("list")
+    list_cmd.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        help="Nur bestimmte Quellen (kommagetrennt oder mehrfach).",
+    )
 
     mail = sub.add_parser("mail-list")
     mail.add_argument("--dry-run", action="store_true", help="Nur simulieren, keine Mails senden")
+    mail.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        help="Nur bestimmte Quellen (kommagetrennt oder mehrfach).",
+    )
     mail.add_argument(
         "--send-open",
         action="store_true",
@@ -71,6 +83,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     mail_open = sub.add_parser("mail-open")
     mail_open.add_argument("--dry-run", action="store_true", help="Nur simulieren, keine Mails senden")
+    mail_open.add_argument(
+        "--source",
+        action="append",
+        default=[],
+        help="Nur bestimmte Quellen (kommagetrennt oder mehrfach).",
+    )
     mail_open.set_defaults(send_open=True)
 
     sub.add_parser("tracker-sync")

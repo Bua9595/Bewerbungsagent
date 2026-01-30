@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-from tools.common import as_dict, env_bool, env_int, is_dry_run, score_value
+from tools.common import as_dict, env_bool, env_int, is_dry_run, parse_sources, score_value
 
 
 AGGREGATOR_SOURCES = {"careerjet", "jobrapido", "jooble"}
@@ -421,7 +421,8 @@ def send_job_alerts(args=None) -> None:
     if closed_aggregators:
         job_logger.info(f"Aggregator-Eintraege geschlossen: {closed_aggregators}")
 
-    rows = collect_jobs()
+    source_filter = parse_sources(getattr(args, "source", None))
+    rows = collect_jobs(sources=source_filter or None)
     scraped_total = len(rows)
     if not rows:
         applied_count = sum(
