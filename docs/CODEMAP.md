@@ -25,10 +25,10 @@ Tools/Helper:
 - `tools/check_env_writes.py` - Sucht nach unsicheren `.env`-Writes im Repo.
 
 ## Wiederverwendbar
-- `bewerbungsagent/job_state.py` ? UID-/State-Logik (mehrfach genutzt)
-- `bewerbungsagent/job_tracker.py` ? Tracker-IO (CSV/XLSX)
-- `bewerbungsagent/job_text_utils.py` ? Text-Parsing/Heuristiken
-- `bewerbungsagent/email_automation.py` ? Mail-Rendering/Versand
+- `bewerbungsagent/job_state.py` - UID-/State-Logik (mehrfach genutzt)
+- `bewerbungsagent/job_tracker.py` - Tracker-IO (CSV/XLSX)
+- `bewerbungsagent/job_text_utils.py` - Text-Parsing/Heuristiken
+- `bewerbungsagent/email_automation.py` - Mail-Rendering/Versand
 
 ## Kritische Abhaengigkeiten
 - Selenium + `webdriver_manager` (Browser/Driver)

@@ -1,7 +1,12 @@
 ﻿from __future__ import annotations
 
 from dataclasses import dataclass
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from concurrent.futures import (
+    ProcessPoolExecutor,
+    ThreadPoolExecutor,
+    TimeoutError as FuturesTimeoutError,
+    as_completed,
+)
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
@@ -12,6 +17,7 @@ import re
 import json
 import time
 import threading
+import random
 import unicodedata
 import multiprocessing as mp
 from urllib.parse import urljoin, urlparse
@@ -30,16 +36,22 @@ from .logger import job_logger
 from .job_adapters_ch import JobsChAdapter, JobupAdapter, JobRow as CHJobRow
 from .job_adapters_extra import (
     CareerjetAdapter,
+    IctJobsAdapter,
+    IctCareerAdapter,
+    ItJobsAdapter,
     JoobleAdapter,
     JoraAdapter,
+    MyItJobAdapter,
     JobrapidoAdapter,
     JobScout24Adapter,
     JobWinnerAdapter,
     MonsterAdapter,
+    SwissDevJobsAdapter,
     ExtraJobRow,
 )
 from .job_query_builder import build_search_urls
 from .job_text_utils import extract_from_multiline_title
+from .cv_filter import get_cv_blocklist_terms
 
 
 # Kanonisches Job-Objekt fuer Sammeln/Export.
@@ -457,6 +469,10 @@ STRICT_LOCATION_FILTER = str(
 ADAPTER_REQUEST_DELAY = float(os.getenv("ADAPTER_REQUEST_DELAY", "0") or 0)
 REQUESTS_ADAPTER_WORKERS = int(os.getenv("REQUESTS_ADAPTER_WORKERS", "6") or 6)
 REQUESTS_ADAPTER_TIMEOUT = float(os.getenv("REQUESTS_ADAPTER_TIMEOUT", "15") or 15)
+REQUESTS_ADAPTER_RETRIES = int(os.getenv("REQUESTS_ADAPTER_RETRIES", "1") or 1)
+REQUESTS_RETRY_BACKOFF_SEC = float(os.getenv("REQUESTS_RETRY_BACKOFF_SEC", "1") or 1)
+REQUESTS_RETRY_JITTER_SEC = float(os.getenv("REQUESTS_RETRY_JITTER_SEC", "0.3") or 0.3)
+REQUESTS_FUTURE_TIMEOUT_SEC = float(os.getenv("REQUESTS_FUTURE_TIMEOUT_SEC", "180") or 180)
 EMPTY_SEARCH_TTL_HOURS = float(os.getenv("EMPTY_SEARCH_TTL_HOURS", "0") or 0)
 EMPTY_SEARCH_CACHE_PATH = Path(
     os.getenv("EMPTY_SEARCH_CACHE_PATH", "generated/empty_search_cache.json")
@@ -465,6 +481,10 @@ TIMING_ENABLED = str(os.getenv("TIMING_ENABLED", "false")).lower() in TRUTHY
 FILTER_STATS = str(os.getenv("FILTER_STATS", "false")).lower() in TRUTHY
 SELENIUM_WORKERS = int(os.getenv("SELENIUM_WORKERS", "1") or 1)
 SELENIUM_WORKERS_RECOMMENDED_MAX = 3
+SELENIUM_EXECUTION_MODE = (os.getenv("SELENIUM_EXECUTION_MODE", "auto") or "auto").strip().lower()
+SELENIUM_FUTURE_TIMEOUT_SEC = float(os.getenv("SELENIUM_FUTURE_TIMEOUT_SEC", "240") or 240)
+COLLECT_RUN_DEADLINE_SEC = float(os.getenv("COLLECT_RUN_DEADLINE_SEC", "240") or 240)
+COLLECT_RAW_CAP_MULTIPLIER = int(os.getenv("COLLECT_RAW_CAP_MULTIPLIER", "2") or 2)
 ALLOWED_LOCATION_BOOST = int(os.getenv("ALLOWED_LOCATION_BOOST", "2") or 2)
 ALLOWED_LOCATIONS = {
     x.strip().lower()
@@ -516,7 +536,7 @@ INCLUDE_KEYWORDS = _normalize_terms(
     }
 )
 BLOCKLIST_TERMS = _normalize_terms(
-    KEYWORD_BLACKLIST | LANGUAGE_BLOCKLIST | REQUIREMENTS_BLOCKLIST
+    KEYWORD_BLACKLIST | LANGUAGE_BLOCKLIST | REQUIREMENTS_BLOCKLIST | get_cv_blocklist_terms()
 )
 AGGREGATOR_SOURCES = {"careerjet", "jobrapido", "jooble"}
 ALLOW_AGGREGATORS = str(os.getenv("ALLOW_AGGREGATORS", "false")).lower() in TRUTHY
@@ -633,6 +653,7 @@ TRANSIT_TIMEOUT = float(os.getenv("TRANSIT_TIMEOUT", "12") or 12)
 DETAILS_BLOCKLIST_CACHE: dict[str, bool] = {}
 DETAILS_INCLUDE_CACHE: dict[str, bool] = {}
 DETAILS_TEXT_CACHE: dict[str, str] = {}
+DETAILS_LOCATION_CACHE: dict[str, str] = {}
 DETAILS_CONTACT_CACHE: dict[str, tuple[str, str]] = {}
 TRANSIT_CACHE: dict[tuple[str, str, str, str], int | None] = {}
 AGGREGATOR_LINK_CACHE: dict[str, bool] = {}
@@ -662,6 +683,45 @@ CAREER_LINK_KEYWORDS = [
 ]
 CAREER_MAX_LINKS = int(os.getenv("CAREER_MAX_LINKS", "40") or 40)
 CAREER_MIN_SCORE = int(os.getenv("CAREER_MIN_SCORE", "0") or 0)
+
+_LOCATION_ALIAS_HINTS = [
+    ("zuerich oerlikon", "Zuerich Oerlikon"),
+    ("zurich oerlikon", "Zuerich Oerlikon"),
+    ("zuerich flughafen", "Zuerich Flughafen"),
+    ("zurich flughafen", "Zuerich Flughafen"),
+    ("zurich airport", "Zuerich Flughafen"),
+    ("glattbrugg", "Glattbrugg"),
+    ("wallisellen", "Wallisellen"),
+    ("duebendorf", "Duebendorf"),
+    ("dubendorf", "Duebendorf"),
+    ("opfikon", "Opfikon"),
+    ("kloten", "Kloten"),
+    ("winterthur", "Winterthur"),
+    ("buelach", "Buelach"),
+    ("bulach", "Buelach"),
+    ("wangen bruettisellen", "Wangen-Bruettisellen"),
+    ("wangen bruttisellen", "Wangen-Bruettisellen"),
+    ("schlieren", "Schlieren"),
+    ("urdorf", "Urdorf"),
+    ("dietikon", "Dietikon"),
+    ("volketswil", "Volketswil"),
+    ("adliswil", "Adliswil"),
+    ("thalwil", "Thalwil"),
+    ("wetzikon", "Wetzikon"),
+    ("schaffhausen", "Schaffhausen"),
+    ("baden", "Baden"),
+    ("aarau", "Aarau"),
+    ("zug", "Zug"),
+    ("zuerich", "Zuerich"),
+    ("zurich", "Zuerich"),
+    ("bern", "Bern"),
+    ("basel", "Basel"),
+    ("luzern", "Luzern"),
+    ("st gallen", "St. Gallen"),
+    ("lausanne", "Lausanne"),
+    ("geneve", "Geneve"),
+    ("geneva", "Geneve"),
+]
 
 
 class _AnchorParser(HTMLParser):
@@ -921,6 +981,13 @@ def _get_transit_minutes(
 
 _SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)[^>]*>.*?</\1>")
 _TAG_RE = re.compile(r"(?is)<[^>]+>")
+_NOISE_SECTION_RE = re.compile(
+    r"(?is)<(header|nav|footer|aside|form|noscript|svg)[^>]*>.*?</\1>"
+)
+_MAIN_ARTICLE_RE = re.compile(r"(?is)<(main|article)[^>]*>(.*?)</\1>")
+_JSONLD_SCRIPT_RE = re.compile(
+    r'(?is)<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>'
+)
 _EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
 _EMAIL_HINTS = ("bewerbung", "recruit", "hr", "jobs", "career")
 _EMAIL_DOMAIN_BLOCKLIST = {"jobs.ch", "jobup.ch", "indeed.com"}
@@ -1088,15 +1155,139 @@ def _detail_page_has_blocked_terms(url: str, blocked: set[str]) -> bool:
     return blocked_found
 
 
-def _detail_page_text(url: str, timeout: float, max_bytes: int) -> str:
-    # Detailseite als normalisierten Text cachen.
-    if not url:
+def _extract_jobposting_payload(html: str) -> tuple[str, str]:
+    chunks: list[str] = []
+    locations: list[str] = []
+    for match in _JSONLD_SCRIPT_RE.finditer(html or ""):
+        raw = (match.group(1) or "").strip()
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except Exception:
+            continue
+        stack = data if isinstance(data, list) else [data]
+        while stack:
+            obj = stack.pop(0)
+            if isinstance(obj, dict) and "@graph" in obj and isinstance(obj["@graph"], list):
+                stack.extend(obj["@graph"])
+                continue
+            if not isinstance(obj, dict):
+                continue
+            obj_type = obj.get("@type")
+            is_job = obj_type == "JobPosting" or (
+                isinstance(obj_type, list) and "JobPosting" in obj_type
+            )
+            if not is_job:
+                continue
+            fields = [
+                obj.get("title"),
+                obj.get("description"),
+                obj.get("qualifications"),
+                obj.get("skills"),
+                obj.get("experienceRequirements"),
+                obj.get("responsibilities"),
+            ]
+            hiring_org = obj.get("hiringOrganization")
+            if isinstance(hiring_org, dict):
+                fields.append(hiring_org.get("name"))
+            loc_parts: list[str] = []
+            job_location = obj.get("jobLocation")
+            if isinstance(job_location, list) and job_location:
+                first = job_location[0] if isinstance(job_location[0], dict) else {}
+                addr = first.get("address") or {}
+                loc_parts = [
+                    addr.get("addressLocality"),
+                    addr.get("addressRegion"),
+                    addr.get("addressCountry"),
+                ]
+                fields.extend(loc_parts)
+            elif isinstance(job_location, dict):
+                addr = job_location.get("address") or {}
+                loc_parts = [
+                    addr.get("addressLocality"),
+                    addr.get("addressRegion"),
+                    addr.get("addressCountry"),
+                ]
+                fields.extend(loc_parts)
+            location = ", ".join(
+                [part.strip() for part in loc_parts if isinstance(part, str) and part.strip()]
+            )
+            if location:
+                locations.append(location)
+            for field in fields:
+                if isinstance(field, str) and field.strip():
+                    chunks.append(field)
+    return " ".join(chunks), (locations[0] if locations else "")
+
+
+def _extract_jobposting_text(html: str) -> str:
+    return _extract_jobposting_payload(html)[0]
+
+
+def _extract_jobposting_location(html: str) -> str:
+    return _extract_jobposting_payload(html)[1]
+
+
+def _extract_primary_html_text(html: str) -> str:
+    cleaned = _SCRIPT_STYLE_RE.sub(" ", html or "")
+    cleaned = _NOISE_SECTION_RE.sub(" ", cleaned)
+    fragments = [m.group(2) for m in _MAIN_ARTICLE_RE.finditer(cleaned)]
+    source = " ".join(fragments) if fragments else cleaned
+    source = _TAG_RE.sub(" ", source)
+    return unescape(source)
+
+
+def _extract_relevant_detail_text(html: str) -> str:
+    jsonld_text = _extract_jobposting_text(html)
+    if jsonld_text.strip():
+        return jsonld_text
+    return _extract_primary_html_text(html)
+
+
+def _infer_location_from_normalized_text(normalized: str) -> str:
+    # Standort heuristisch aus Detailtext ableiten.
+    if not normalized:
         return ""
-    if url in DETAILS_TEXT_CACHE:
-        return DETAILS_TEXT_CACHE[url]
+
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    env_locations = list(getattr(config, "SEARCH_LOCATIONS", []) or []) + list(
+        ALLOWED_LOCATIONS
+    )
+    for value in env_locations:
+        display = (value or "").strip()
+        needle = _normalize_text(display)
+        if not display or not needle or needle in seen:
+            continue
+        seen.add(needle)
+        candidates.append((needle, display))
+
+    for needle, display in _LOCATION_ALIAS_HINTS:
+        needle_norm = _normalize_text(needle)
+        if not needle_norm or needle_norm in seen:
+            continue
+        seen.add(needle_norm)
+        candidates.append((needle_norm, display))
+
+    candidates.sort(key=lambda item: len(item[0]), reverse=True)
+    for needle, display in candidates:
+        if needle and needle in normalized:
+            return display
+    return ""
+
+
+def _detail_page_payload(url: str, timeout: float, max_bytes: int) -> tuple[str, str]:
+    # Detailseite als normalisierten Text plus Ort cachen.
+    if not url:
+        return "", ""
+    if url in DETAILS_TEXT_CACHE and url in DETAILS_LOCATION_CACHE:
+        return DETAILS_TEXT_CACHE[url], DETAILS_LOCATION_CACHE[url]
     if _is_skipped_detail_domain(url):
         DETAILS_TEXT_CACHE[url] = ""
-        return ""
+        DETAILS_LOCATION_CACHE[url] = ""
+        return "", ""
     try:
         resp = requests.get(
             url,
@@ -1107,15 +1298,26 @@ def _detail_page_text(url: str, timeout: float, max_bytes: int) -> str:
         text = resp.text or ""
         if max_bytes and len(text) > max_bytes:
             text = text[:max_bytes]
-        text = _SCRIPT_STYLE_RE.sub(" ", text)
-        text = _TAG_RE.sub(" ", text)
-        normalized = _normalize_text(text)
+        normalized = _normalize_text(_extract_relevant_detail_text(text))
+        location = _extract_jobposting_location(text).strip()
+        if not location:
+            location = _infer_location_from_normalized_text(normalized)
         DETAILS_TEXT_CACHE[url] = normalized
-        return normalized
+        DETAILS_LOCATION_CACHE[url] = location
+        return normalized, location
     except Exception as e:
         job_logger.warning(f"Detail-Scan Fehler ({url}): {e}")
         DETAILS_TEXT_CACHE[url] = ""
-        return ""
+        DETAILS_LOCATION_CACHE[url] = ""
+        return "", ""
+
+
+def _detail_page_text(url: str, timeout: float, max_bytes: int) -> str:
+    return _detail_page_payload(url, timeout, max_bytes)[0]
+
+
+def _detail_page_location(url: str, timeout: float, max_bytes: int) -> str:
+    return _detail_page_payload(url, timeout, max_bytes)[1]
 
 
 def _detail_page_has_required_terms(url: str, required: set[str]) -> bool:
@@ -1319,12 +1521,39 @@ def _timing_log(label: str, seconds: float, extra: str = "") -> None:
     job_logger.info(f"timing {label}={seconds:.2f}s{suffix}")
 
 
+def _retry_backoff_sleep(attempt: int) -> None:
+    if REQUESTS_RETRY_BACKOFF_SEC <= 0:
+        return
+    base = REQUESTS_RETRY_BACKOFF_SEC * (2**max(0, attempt - 1))
+    jitter = random.uniform(0, max(0.0, REQUESTS_RETRY_JITTER_SEC))
+    time.sleep(base + jitter)
+
+
+def _normalized_selenium_mode() -> str:
+    mode = (SELENIUM_EXECUTION_MODE or "auto").strip().lower()
+    if mode in {"process", "thread", "sequential"}:
+        return mode
+    if os.name == "nt":
+        # Windows + ThreadPool + Selenium kann Threads offen halten.
+        # Auto waehlt daher bewusst sequential fuer sauberes Prozessende.
+        return "sequential"
+    return "process"
+
+
 def collect_jobs(
     limit_per_site: int | None = None,
     max_total: int | None = None,
     sources: list[str] | None = None,
 ) -> List[Job]:
     total_start = time.perf_counter() if TIMING_ENABLED else 0.0
+    run_started = time.monotonic()
+    run_deadline = (
+        run_started + COLLECT_RUN_DEADLINE_SEC
+        if COLLECT_RUN_DEADLINE_SEC > 0
+        else None
+    )
+    deadline_logged = False
+    raw_cap = None
     # Hauptsammlung: alle Quellen durchsuchen und filtern.
     # Limits konsolidieren.
     if limit_per_site is None:
@@ -1336,6 +1565,24 @@ def collect_jobs(
         max_total = _normalize_limit(COLLECT_MAX_TOTAL)
     else:
         max_total = _normalize_limit(max_total)
+    if max_total:
+        raw_cap = max_total * max(1, COLLECT_RAW_CAP_MULTIPLIER)
+
+    def _deadline_exceeded() -> bool:
+        nonlocal deadline_logged
+        if run_deadline is None:
+            return False
+        exceeded = time.monotonic() >= run_deadline
+        if exceeded and not deadline_logged:
+            deadline_logged = True
+            job_logger.warning(
+                "Collect-Deadline erreicht (COLLECT_RUN_DEADLINE_SEC=%ss), stoppe Restaufgaben.",
+                COLLECT_RUN_DEADLINE_SEC,
+            )
+        return exceeded
+
+    def _raw_cap_reached() -> bool:
+        return bool(raw_cap and len(all_jobs) >= raw_cap)
 
     # Such-URLs und Query-Terme vorbereiten.
     urls = build_search_urls(config)
@@ -1383,14 +1630,26 @@ def collect_jobs(
     all_jobs: List[Job] = []
     driver = None
     headless = getattr(config, "HEADLESS_MODE", True)
+    selenium_init_error: str | None = None
 
-    def _ensure_driver():
-        nonlocal driver
+    def _ensure_driver() -> bool:
+        nonlocal driver, selenium_init_error
+        if selenium_init_error:
+            return False
         if driver is None:
             driver_start = time.perf_counter() if TIMING_ENABLED else 0.0
-            driver = _mk_driver(headless=headless)
+            try:
+                driver = _mk_driver(headless=headless)
+            except Exception as exc:
+                selenium_init_error = str(exc)
+                job_logger.warning(
+                    "Selenium-Initialisierung fehlgeschlagen; Selenium-Quellen werden uebersprungen: %s",
+                    exc,
+                )
+                return False
             if TIMING_ENABLED:
                 _timing_log("driver_init", time.perf_counter() - driver_start)
+        return True
 
     try:
         # Indeed (falls URL vorhanden)
@@ -1407,7 +1666,8 @@ def collect_jobs(
             and (not source_filter or "indeed" in source_filter)
         ):
             try:
-                _ensure_driver()
+                if not _ensure_driver():
+                    raise RuntimeError("Selenium-Driver nicht verfuegbar")
                 _adapter_pause()
                 adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
                 indeed_jobs = _collect_indeed(
@@ -1429,6 +1689,11 @@ def collect_jobs(
         adapter_totals: dict[str, float] = {}
         selenium_adapters = [JobsChAdapter(), JobupAdapter()]
         request_adapters = [
+            IctJobsAdapter(),
+            ItJobsAdapter(),
+            IctCareerAdapter(),
+            MyItJobAdapter(),
+            SwissDevJobsAdapter(),
             JobScout24Adapter(),
             JobWinnerAdapter(),
             CareerjetAdapter(),
@@ -1444,11 +1709,22 @@ def collect_jobs(
             "jobup.ch",
             "jobscout24",
             "jobwinner",
+            "ictjobs.ch",
+            "ictcareer.ch",
+            "itjobs.ch",
+            "myitjob.ch",
+            "swissdevjobs.ch",
             "careerjet",
             "jobrapido",
             "monster",
             "jora",
             "jooble",
+        }
+        selenium_source_names = {
+            _normalize_source_name(adapter.source) for adapter in selenium_adapters
+        }
+        request_source_names = {
+            _normalize_source_name(adapter.source) for adapter in request_adapters
         }
         if ENABLED_SOURCES:
             unknown = ENABLED_SOURCES - known_sources
@@ -1476,11 +1752,16 @@ def collect_jobs(
 
         selenium_adapters = [a for a in selenium_adapters if _allowed(a)]
         request_adapters = [a for a in request_adapters if _allowed(a)]
-        if not selenium_adapters:
+        requested_sources = (
+            source_filter if source_filter is not None else set(ENABLED_SOURCES)
+        )
+        if not requested_sources:
+            requested_sources = known_sources
+        if not selenium_adapters and requested_sources & selenium_source_names:
             job_logger.warning(
                 "Keine Selenium-Adapter aktiv (ENABLED_SOURCES/BLOCKED_SOURCES prüfen)."
             )
-        if not request_adapters:
+        if not request_adapters and requested_sources & request_source_names:
             job_logger.warning(
                 "Keine Request-Adapter aktiv (ENABLED_SOURCES/BLOCKED_SOURCES prüfen)."
             )
@@ -1498,17 +1779,39 @@ def collect_jobs(
             return session
 
         def _run_request_search(adapter, query: str, loc: str):
+            if _deadline_exceeded():
+                return adapter.source, query, loc, [], 0.0
             session = _get_request_session()
             started = time.perf_counter()
-            rows = adapter.search(
-                None,
-                query=query,
-                location=loc,
-                radius_km=radius_km,
-                limit=limit_per_site,
-                session=session,
-                timeout=float(REQUESTS_ADAPTER_TIMEOUT),
-            )
+            attempts = max(1, REQUESTS_ADAPTER_RETRIES + 1)
+            last_exc: Exception | None = None
+            rows = []
+            for attempt in range(1, attempts + 1):
+                try:
+                    rows = adapter.search(
+                        None,
+                        query=query,
+                        location=loc,
+                        radius_km=radius_km,
+                        limit=limit_per_site,
+                        session=session,
+                        timeout=float(REQUESTS_ADAPTER_TIMEOUT),
+                    )
+                    last_exc = None
+                    break
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt >= attempts or _deadline_exceeded():
+                        break
+                    try:
+                        session.close()
+                    except Exception:
+                        pass
+                    request_local.session = None
+                    session = _get_request_session()
+                    _retry_backoff_sleep(attempt)
+            if last_exc is not None:
+                raise last_exc
             duration = time.perf_counter() - started
             return adapter.source, query, loc, rows, duration
 
@@ -1557,7 +1860,7 @@ def collect_jobs(
                     )
                 )
                 converted += 1
-                if max_total and len(all_jobs) >= max_total * 2:
+                if _raw_cap_reached():
                     break
 
             job_logger.info(
@@ -1586,14 +1889,23 @@ def collect_jobs(
 
         if request_adapters:
             for adapter in request_adapters:
+                if _deadline_exceeded() or _raw_cap_reached():
+                    break
                 source = _normalize_source_name(adapter.source)
                 source_queries = (
                     batched_queries
                     if QUERY_BATCH_SIZE > 1 and source in QUERY_BATCH_SOURCES
                     else query_terms
                 )
+                source_locations = (
+                    locations if getattr(adapter, "supports_location", True) else [""]
+                )
                 for query in source_queries:
-                    for loc in locations:
+                    if _deadline_exceeded() or _raw_cap_reached():
+                        break
+                    for loc in source_locations:
+                        if _deadline_exceeded() or _raw_cap_reached():
+                            break
                         if empty_cache_ttl_sec > 0:
                             key = _empty_cache_key(source, query, loc, radius_km)
                             if key in empty_cache:
@@ -1628,9 +1940,15 @@ def collect_jobs(
         if selenium_adapters:
             selenium_tasks: list[tuple[str, str, str]] = []
             for adapter in selenium_adapters:
+                if _deadline_exceeded() or _raw_cap_reached():
+                    break
                 source = _normalize_source_name(adapter.source)
                 for query in query_terms:
+                    if _deadline_exceeded() or _raw_cap_reached():
+                        break
                     for loc in locations:
+                        if _deadline_exceeded() or _raw_cap_reached():
+                            break
                         if empty_cache_ttl_sec > 0:
                             key = _empty_cache_key(source, query, loc, radius_km)
                             if key in empty_cache:
@@ -1638,7 +1956,28 @@ def collect_jobs(
                                 continue
                         selenium_tasks.append((source, query, loc))
 
-            if selenium_tasks and selenium_workers > 1:
+            selenium_mode = _normalized_selenium_mode()
+            if selenium_tasks:
+                job_logger.info(
+                    "Selenium-Plan: %s Aufgaben fuer %s Quellen, %s Suchbegriffe, %s Orte (Modus=%s).",
+                    len(selenium_tasks),
+                    len(selenium_adapters),
+                    len(query_terms),
+                    len(locations),
+                    selenium_mode,
+                )
+                if SELENIUM_EXECUTION_MODE == "auto" and os.name == "nt":
+                    job_logger.info(
+                        "SELENIUM_EXECUTION_MODE=auto -> sequential (Windows Stabilitaet)."
+                    )
+                if not _ensure_driver():
+                    job_logger.warning(
+                        "Selenium-Quellen werden uebersprungen: Driver konnte nicht gestartet werden."
+                    )
+                    selenium_tasks = []
+                    selenium_adapters = []
+
+            if selenium_tasks and selenium_workers > 1 and selenium_mode != "sequential":
                 if driver is not None:
                     try:
                         driver.quit()
@@ -1647,47 +1986,114 @@ def collect_jobs(
                     driver = None
 
                 worker_count = min(selenium_workers, len(selenium_tasks))
-                ctx = mp.get_context("spawn")
                 batches = _split_tasks(selenium_tasks, worker_count)
-                with ProcessPoolExecutor(
-                    max_workers=worker_count,
-                    mp_context=ctx,
-                ) as ex:
-                    futures = [
-                        ex.submit(
-                            _selenium_worker,
-                            batch,
-                            radius_km,
-                            limit_per_site,
-                            headless,
+
+                def _consume_selenium_result(result: dict) -> None:
+                    for error in result.get("errors", []):
+                        job_logger.warning("Selenium Worker Fehler: %s", error)
+                    for payload in result.get("results", []):
+                        source = _normalize_source_name(payload.get("source", "unknown"))
+                        query = payload.get("query", "")
+                        loc = payload.get("loc", "")
+                        rows = payload.get("rows", [])
+                        duration = float(payload.get("duration", 0.0) or 0.0)
+                        converted = _append_rows(source, rows, query, loc)
+                        if empty_cache_ttl_sec > 0 and converted == 0:
+                            key = _empty_cache_key(source, query, loc, radius_km)
+                            empty_cache_updates[key] = time.time()
+                        adapter_totals[source] = adapter_totals.get(source, 0.0) + duration
+
+                def _run_selenium_parallel(use_process_pool: bool) -> None:
+                    ex = None
+                    futures = []
+                    try:
+                        if use_process_pool:
+                            ctx = mp.get_context("spawn")
+                            ex = ProcessPoolExecutor(max_workers=worker_count, mp_context=ctx)
+                        else:
+                            ex = ThreadPoolExecutor(max_workers=worker_count)
+                        futures = [
+                            ex.submit(
+                                _selenium_worker,
+                                batch,
+                                radius_km,
+                                limit_per_site,
+                                headless,
+                            )
+                            for batch in batches
+                        ]
+                        timeout = SELENIUM_FUTURE_TIMEOUT_SEC if SELENIUM_FUTURE_TIMEOUT_SEC > 0 else None
+                        for future in as_completed(futures, timeout=timeout):
+                            if _deadline_exceeded() or _raw_cap_reached():
+                                break
+                            result = future.result()
+                            _consume_selenium_result(result)
+                    except FuturesTimeoutError:
+                        job_logger.warning(
+                            "Selenium-Parallellauf Timeout nach %ss.",
+                            SELENIUM_FUTURE_TIMEOUT_SEC,
                         )
-                        for batch in batches
-                    ]
-                    for future in as_completed(futures):
-                        result = future.result()
-                        for error in result.get("errors", []):
-                            job_logger.warning("Selenium Worker Fehler: %s", error)
-                        for payload in result.get("results", []):
-                            source = _normalize_source_name(
-                                payload.get("source", "unknown")
+                    finally:
+                        for future in futures:
+                            if not future.done():
+                                future.cancel()
+                        if ex is not None:
+                            try:
+                                ex.shutdown(wait=False, cancel_futures=True)
+                            except TypeError:
+                                ex.shutdown(wait=False)
+
+                if selenium_mode == "sequential":
+                    for batch in batches:
+                        if _deadline_exceeded() or _raw_cap_reached():
+                            break
+                        try:
+                            _consume_selenium_result(
+                                _selenium_worker(
+                                    batch, radius_km, limit_per_site, headless
+                                )
                             )
-                            query = payload.get("query", "")
-                            loc = payload.get("loc", "")
-                            rows = payload.get("rows", [])
-                            duration = float(payload.get("duration", 0.0) or 0.0)
-                            converted = _append_rows(source, rows, query, loc)
-                            if empty_cache_ttl_sec > 0 and converted == 0:
-                                key = _empty_cache_key(source, query, loc, radius_km)
-                                empty_cache_updates[key] = time.time()
-                            adapter_totals[source] = (
-                                adapter_totals.get(source, 0.0) + duration
+                        except Exception as exc:
+                            job_logger.warning(
+                                "Selenium Sequential Fehler: %s", exc
                             )
+                elif selenium_mode == "process":
+                    try:
+                        _run_selenium_parallel(use_process_pool=True)
+                    except Exception as exc:
+                        job_logger.warning(
+                            "Selenium ProcessPool Fehler (%s), fallback auf sequential.",
+                            exc,
+                        )
+                        for batch in batches:
+                            if _deadline_exceeded() or _raw_cap_reached():
+                                break
+                            try:
+                                _consume_selenium_result(
+                                    _selenium_worker(
+                                        batch, radius_km, limit_per_site, headless
+                                    )
+                                )
+                            except Exception as seq_exc:
+                                job_logger.warning(
+                                    "Selenium Sequential Fallback Fehler: %s", seq_exc
+                                )
+                else:
+                    try:
+                        _run_selenium_parallel(use_process_pool=False)
+                    except Exception as exc:
+                        job_logger.warning("Selenium ThreadPool Fehler: %s", exc)
             elif selenium_tasks:
-                _ensure_driver()
                 for adapter in selenium_adapters:
+                    if _deadline_exceeded() or _raw_cap_reached():
+                        break
                     adapter_start = time.perf_counter() if TIMING_ENABLED else 0.0
                     for query in query_terms:
+                        if _deadline_exceeded() or _raw_cap_reached():
+                            break
                         for loc in locations:
+                            if _deadline_exceeded() or _raw_cap_reached():
+                                break
                             if empty_cache_ttl_sec > 0:
                                 key = _empty_cache_key(
                                     _normalize_source_name(adapter.source),
@@ -1723,14 +2129,14 @@ def collect_jobs(
                                     )
                                     empty_cache_updates[key] = time.time()
 
-                                if max_total and len(all_jobs) >= max_total * 2:
+                                if _raw_cap_reached():
                                     break
                             except Exception as e:
                                 job_logger.warning(
                                     f"Adapter {adapter.source} Fehler "
                                     f"(query='{query}', loc='{loc}'): {e}"
                                 )
-                        if max_total and len(all_jobs) >= max_total * 2:
+                        if _raw_cap_reached():
                             break
                     if TIMING_ENABLED:
                         adapter_totals[_normalize_source_name(adapter.source)] = (
@@ -1739,20 +2145,38 @@ def collect_jobs(
                         )
 
         if request_executor:
-            for future in as_completed(request_futures):
-                adapter, query, loc = request_futures[future]
+            timeout = REQUESTS_FUTURE_TIMEOUT_SEC if REQUESTS_FUTURE_TIMEOUT_SEC > 0 else None
+            try:
+                for future in as_completed(request_futures, timeout=timeout):
+                    if _deadline_exceeded() or _raw_cap_reached():
+                        break
+                    adapter, query, loc = request_futures[future]
+                    try:
+                        source, query, loc, rows, duration = future.result()
+                    except Exception as e:
+                        job_logger.warning(
+                            f"Adapter {adapter.source} Fehler "
+                            f"(query='{query}', loc='{loc}'): {e}"
+                        )
+                        continue
+                    _handle_request_result(source, query, loc, rows, duration)
+            except FuturesTimeoutError:
+                job_logger.warning(
+                    "Request-Adapter Timeout nach %ss; verbleibende Aufgaben werden abgebrochen.",
+                    REQUESTS_FUTURE_TIMEOUT_SEC,
+                )
+            finally:
+                for future in request_futures:
+                    if not future.done():
+                        future.cancel()
                 try:
-                    source, query, loc, rows, duration = future.result()
-                except Exception as e:
-                    job_logger.warning(
-                        f"Adapter {adapter.source} Fehler "
-                        f"(query='{query}', loc='{loc}'): {e}"
-                    )
-                    continue
-                _handle_request_result(source, query, loc, rows, duration)
-            request_executor.shutdown(wait=True)
+                    request_executor.shutdown(wait=False, cancel_futures=True)
+                except TypeError:
+                    request_executor.shutdown(wait=False)
         elif request_tasks:
             for adapter, query, loc in request_tasks:
+                if _deadline_exceeded() or _raw_cap_reached():
+                    break
                 try:
                     source, query, loc, rows, duration = _run_request_search(
                         adapter,
@@ -1839,6 +2263,21 @@ def collect_jobs(
             if not j.location and l2:
                 j.location = l2
 
+        is_remote = _is_remote(j)
+
+        if is_remote and not ALLOW_REMOTE:
+            _bump("remote_blocked")
+            continue
+
+        if transit_enabled and not is_remote and not j.location and j.link:
+            detail_location = _detail_page_location(
+                j.link,
+                timeout=max(DETAILS_INCLUDE_TIMEOUT, DETAILS_BLOCKLIST_TIMEOUT),
+                max_bytes=max(DETAILS_INCLUDE_MAX_BYTES, DETAILS_BLOCKLIST_MAX_BYTES),
+            )
+            if detail_location:
+                j.location = detail_location
+
         local_match = _is_local(j, search_locs) if search_locs else True
         allowed_match = (
             _is_allowed_location(j, ALLOWED_LOCATIONS) if ALLOWED_LOCATIONS else True
@@ -1848,11 +2287,6 @@ def collect_jobs(
             if HARD_ALLOWED_LOCATIONS
             else True
         )
-        is_remote = _is_remote(j)
-
-        if is_remote and not ALLOW_REMOTE:
-            _bump("remote_blocked")
-            continue
 
         if HARD_ALLOWED_LOCATIONS and not hard_allowed_match:
             _bump("hard_location")
@@ -1870,8 +2304,8 @@ def collect_jobs(
                     _bump("transit_blocked")
                     continue
             else:
-                if STRICT_LOCATION_FILTER and not (local_match or allowed_match):
-                    _bump("strict_location")
+                if not (local_match or allowed_match):
+                    _bump("location_unknown")
                     continue
         elif STRICT_LOCATION_FILTER:
             if search_locs and not local_match:

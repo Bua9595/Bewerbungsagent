@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Iterable, List, Optional
@@ -76,9 +77,24 @@ def _is_detail_link(link: str) -> bool:
         return False
     u = link.lower()
     try:
-        path = urlsplit(u).path
+        parts = urlsplit(u)
+        path = parts.path
+        netloc = parts.netloc
     except Exception:
         path = u
+        netloc = u
+    if "jobscout24.ch" in netloc:
+        return bool(re.search(r"^/de/job/[0-9a-f-]+/?$", path))
+    if "jobwinner.ch" in netloc:
+        return bool(re.search(r"^/(de/)?job/\d+/?$", path))
+    if "itjobs.ch" in netloc:
+        return bool(re.search(r"^/jobs/\d+-[^/]+/?$", path))
+    if "ictjobs.ch" in netloc:
+        segments = [seg for seg in path.split("/") if seg]
+        return len(segments) == 2 and segments[0] not in {"stellen", "arbeitsort", "contact-info"}
+    if "swissdevjobs.ch" in netloc:
+        segments = [seg for seg in path.split("/") if seg]
+        return len(segments) == 2 and segments[0] == "jobs" and segments[1] != "all"
     if "/detail/" in path or "/job/" in path or "/jobad/" in path or "/stellenangebot" in path:
         return True
     if "/jobs/" in path and re.search(r"/jobs/[^/]+", path):
@@ -90,6 +106,16 @@ def _is_detail_link(link: str) -> bool:
     if re.search(r"/\d{6,}(/|$)", u):
         return True
     return False
+
+
+def _normalize_topic(value: str) -> str:
+    text = unicodedata.normalize("NFKD", value or "")
+    text = text.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _matches_any(text: str, needles: tuple[str, ...]) -> bool:
+    return any(needle in text for needle in needles)
 
 
 class _LinkParser(HTMLParser):
@@ -275,6 +301,7 @@ class _BaseRequestsAdapter:
     base_url = ""
     domain_hint = ""
     link_patterns: list[re.Pattern] = []
+    supports_location = True
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         raise NotImplementedError
@@ -316,7 +343,7 @@ class JobScout24Adapter(_BaseRequestsAdapter):
     source = "jobscout24"
     base_url = "https://www.jobscout24.ch/de/jobs/"
     domain_hint = "jobscout24.ch"
-    link_patterns = [re.compile(r"/jobs?/|/de/jobs?/")]
+    link_patterns = [re.compile(r"/de/job/[0-9a-f-]+/?$", re.I)]
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         q = quote_plus(query)
@@ -328,7 +355,7 @@ class JobWinnerAdapter(_BaseRequestsAdapter):
     source = "jobwinner"
     base_url = "https://www.jobwinner.ch/jobs/"
     domain_hint = "jobwinner.ch"
-    link_patterns = [re.compile(r"/jobs?/")]
+    link_patterns = [re.compile(r"/(de/)?job/\d+/?$", re.I)]
 
     def build_url(self, query: str, location: str, radius_km: int) -> str:
         q = quote_plus(query)
@@ -394,3 +421,103 @@ class JoobleAdapter(_BaseRequestsAdapter):
         q = quote_plus((query or "").strip())
         loc = quote_plus((location or "").strip())
         return f"{self.base_url}?ukw={q}&rgns={loc}"
+
+
+class IctJobsAdapter(_BaseRequestsAdapter):
+    source = "ictjobs.ch"
+    base_url = "https://ictjobs.ch/stellen/it-jobs/"
+    domain_hint = "ictjobs.ch"
+    link_patterns = [re.compile(r"ictjobs\.ch/[^/]+/[^/]+/?$")]
+    supports_location = False
+
+    def build_url(self, query: str, location: str, radius_km: int) -> str:
+        normalized = _normalize_topic(query)
+        if _matches_any(normalized, ("support", "helpdesk", "1st level", "2nd level", "desktop", "workplace")):
+            return f"{self.base_url}it-support/"
+        if _matches_any(normalized, ("administrator", "system admin", "systemadministrator")):
+            return f"{self.base_url}it-administrator/"
+        if _matches_any(normalized, ("system engineer", "netzwerk", "network", "infrastruktur")):
+            return f"{self.base_url}system-engineer/"
+        if _matches_any(normalized, ("security", "cyber")):
+            return f"{self.base_url}it-security/"
+        return self.base_url
+
+
+class ItJobsAdapter(_BaseRequestsAdapter):
+    source = "itjobs.ch"
+    base_url = "https://www.itjobs.ch/jobs/"
+    domain_hint = "itjobs.ch"
+    link_patterns = [re.compile(r"itjobs\.ch/jobs/\d+-[^/]+/?$")]
+    supports_location = False
+
+    def build_url(self, query: str, location: str, radius_km: int) -> str:
+        normalized = _normalize_topic(query)
+        if _matches_any(normalized, ("support", "helpdesk", "1st level", "2nd level", "desktop", "workplace")):
+            return f"{self.base_url}user-help-desk-support-training"
+        if _matches_any(normalized, ("administrator", "system admin", "systemadministrator")):
+            return f"{self.base_url}system-administration"
+        if _matches_any(normalized, ("system engineer", "netzwerk", "network", "infrastruktur")):
+            return f"{self.base_url}system-engineering"
+        if _matches_any(normalized, ("security", "cyber")):
+            return f"{self.base_url}security-audit"
+        return f"{self.base_url}in-switzerland"
+
+
+class SwissDevJobsAdapter(_BaseRequestsAdapter):
+    source = "swissdevjobs.ch"
+    base_url = "https://swissdevjobs.ch/jobs/"
+    domain_hint = "swissdevjobs.ch"
+    link_patterns = [re.compile(r"swissdevjobs\.ch/jobs/[^/?#]+$")]
+    supports_location = False
+
+    def build_url(self, query: str, location: str, radius_km: int) -> str:
+        normalized = _normalize_topic(query)
+        if _matches_any(
+            normalized,
+            ("support", "helpdesk", "1st level", "2nd level", "desktop", "workplace"),
+        ):
+            return f"{self.base_url}Support/all"
+        if _matches_any(
+            normalized,
+            ("system", "administrator", "system admin", "systemadministrator", "netzwerk", "network"),
+        ):
+            return f"{self.base_url}System/all"
+        if _matches_any(normalized, ("security", "cyber")):
+            return f"{self.base_url}Security/all"
+        if _matches_any(normalized, ("devops", "cloud", "azure", "m365", "microsoft 365")):
+            return f"{self.base_url}DevOps/all"
+        return f"{self.base_url}IT/all"
+
+
+class IctCareerAdapter(_BaseRequestsAdapter):
+    source = "ictcareer.ch"
+    base_url = "https://ictcareer.ch/en/jobs"
+    domain_hint = "ictcareer.ch"
+    link_patterns = [re.compile(r"ictcareer\.ch/en/job/\d+")]
+    supports_location = False
+
+    def build_url(self, query: str, location: str, radius_km: int) -> str:
+        q = quote_plus((query or "").strip())
+        return f"{self.base_url}?q={q}"
+
+
+class MyItJobAdapter(_BaseRequestsAdapter):
+    source = "myitjob.ch"
+    base_url = "https://myitjob.ch/"
+    domain_hint = "myitjob.ch"
+    link_patterns = [re.compile(r"myitjob\.ch/job/[^/?#]+/?$")]
+    supports_location = False
+
+    def build_url(self, query: str, location: str, radius_km: int) -> str:
+        normalized = _normalize_topic(query)
+        if _matches_any(
+            normalized,
+            ("support", "helpdesk", "1st level", "2nd level", "desktop", "workplace"),
+        ):
+            return self.base_url
+        if _matches_any(
+            normalized,
+            ("administrator", "system admin", "systemadministrator", "system"),
+        ):
+            return self.base_url
+        return self.base_url

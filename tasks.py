@@ -24,6 +24,7 @@ Beispiele:
 """
 
 import argparse
+import sys
 
 from tools.commands.applications import archive_sent, prepare_applications, send_applications
 from tools.commands.basic import (
@@ -41,7 +42,7 @@ from tools.commands.tracker import mark_applied, mark_ignored, run_tracker_ui, s
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
-    sub = parser.add_subparsers(dest="cmd", required=True)
+    sub = parser.add_subparsers(dest="cmd")
 
     sub.add_parser("env-check")
     sub.add_parser("verify")
@@ -139,8 +140,21 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def configure_console_output() -> None:
+    """Verhindert Unicode-Abstuerze in Windows-Terminals."""
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv=None) -> None:
+    configure_console_output()
     parser = build_parser()
+    argv = sys.argv[1:] if argv is None else argv
+    if not argv:
+        argv = ["start"]
     args = parser.parse_args(argv)
 
     dispatch = {

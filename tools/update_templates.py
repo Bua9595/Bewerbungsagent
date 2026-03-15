@@ -8,7 +8,7 @@ def create_template(path, title_key, hook_token, match_token):
     # Header
     doc.add_paragraph("Florian Bujupi")
     doc.add_paragraph("Bülach, Schweiz")
-    doc.add_paragraph("fb95.jobs@gmail.com")
+doc.add_paragraph("{{PROFILE_EMAIL}}")
     doc.add_paragraph("")
     doc.add_paragraph("Winterthur, {{TODAY_DATE}}")
     doc.add_paragraph("")
