@@ -94,6 +94,42 @@ _EXPERIENCE_3_PLUS_YEARS: Set[str] = {
     "2 3 jahre",
 }
 
+# Erfahrungs-Begriffe: domain-spezifische Erfahrung ohne Jahresangabe
+# ("Erfahrung im IT-Support") – geblockt wenn person < 2 Jahre Erfahrung hat
+_EXPERIENCE_DOMAIN_REQUIRED: Set[str] = {
+    # IT-Support / Helpdesk
+    "erfahrung im it-support",
+    "erfahrung im it support",
+    "erfahrung im helpdesk",
+    "erfahrung im help desk",
+    "erfahrung im servicedesk",
+    "erfahrung im service desk",
+    "erfahrung im itsm",
+    "erfahrung im enduser",
+    "erfahrung im end-user",
+    "berufserfahrung im it-support",
+    "berufserfahrung im it support",
+    "berufserfahrung im helpdesk",
+    "berufserfahrung im servicedesk",
+    # 1st/2nd Level
+    "erfahrung im 1st level",
+    "erfahrung im first level",
+    "erfahrung im 2nd level",
+    "erfahrung im second level",
+    "erfahrung im 1. level",
+    "erfahrung im 2. level",
+    # Allgemein IT
+    "erfahrung in der it-betreuung",
+    "erfahrung in der benutzerbetreuung",
+    "berufserfahrung im it",
+    # English
+    "experience in it support",
+    "experience in helpdesk",
+    "experience in help desk",
+    "experience in service desk",
+    "experience in itsm",
+}
+
 # Erfahrungs-Begriffe: geblockt wenn person < 2 Jahre Erfahrung hat
 _EXPERIENCE_2_PLUS_YEARS: Set[str] = {
     "2 jahre erfahrung",
@@ -161,9 +197,10 @@ def get_cv_blocklist_terms() -> Set[str]:
     if exp_years < 3:
         terms |= _EXPERIENCE_3_PLUS_YEARS
 
-    # Ab < 2 Jahren: auch 2 Jahre blockieren
+    # Ab < 2 Jahren: auch 2 Jahre blockieren + domain-spez. Erfahrungsanforderungen
     if exp_years < 2:
         terms |= _EXPERIENCE_2_PLUS_YEARS
+        terms |= _EXPERIENCE_DOMAIN_REQUIRED
 
     # --- Führerschein ---
     if not profile.get("driving_license", False):
