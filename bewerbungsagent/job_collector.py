@@ -648,6 +648,7 @@ TRANSIT_MAX_MINUTES = int(os.getenv("TRANSIT_MAX_MINUTES", "60") or 60)
 TRANSIT_TIME = os.getenv("TRANSIT_TIME", "").strip()
 TRANSIT_DATE = os.getenv("TRANSIT_DATE", "").strip()
 TRANSIT_TIMEOUT = float(os.getenv("TRANSIT_TIMEOUT", "12") or 12)
+TRANSIT_REQUEST_DELAY = float(os.getenv("TRANSIT_REQUEST_DELAY", "0.5") or 0.5)
 
 # In-Memory-Caches fuer Detail-Scans und Checks.
 DETAILS_BLOCKLIST_CACHE: dict[str, bool] = {}
@@ -943,10 +944,14 @@ def _parse_duration_minutes(value: str) -> int | None:
     return days * 24 * 60 + hours * 60 + minutes
 
 
+_transit_last_request: float = 0.0
+
+
 def _get_transit_minutes(
     origin: str, destination: str, date: str, time_str: str
 ) -> int | None:
-    # Opendata Transit-API abfragen (mit Cache).
+    # Opendata Transit-API abfragen (mit Cache + Rate-Limit-Schutz).
+    global _transit_last_request
     key = (origin, destination, date, time_str)
     if key in TRANSIT_CACHE:
         return TRANSIT_CACHE[key]
@@ -955,12 +960,29 @@ def _get_transit_minutes(
         params["date"] = date
     if time_str:
         params["time"] = time_str
+    # Mindest-Pause zwischen Requests einhalten (Rate-Limit transport.opendata.ch)
+    elapsed = time.time() - _transit_last_request
+    if elapsed < TRANSIT_REQUEST_DELAY:
+        time.sleep(TRANSIT_REQUEST_DELAY - elapsed)
     try:
+        _transit_last_request = time.time()
         resp = requests.get(
             "https://transport.opendata.ch/v1/connections",
             params=params,
             timeout=TRANSIT_TIMEOUT,
         )
+        if resp.status_code == 429:
+            retry_after = float(resp.headers.get("Retry-After", "5"))
+            job_logger.warning(
+                f"Transit-API 429 fuer {destination}, warte {retry_after:.0f}s"
+            )
+            time.sleep(retry_after)
+            _transit_last_request = time.time()
+            resp = requests.get(
+                "https://transport.opendata.ch/v1/connections",
+                params=params,
+                timeout=TRANSIT_TIMEOUT,
+            )
         resp.raise_for_status()
         data = resp.json()
         connections = data.get("connections") or []
