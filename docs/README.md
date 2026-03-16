@@ -34,19 +34,19 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - Optional: `SEARCH_KEYWORDS`, `ENABLED_SOURCES`, `EMAIL_MAX_JOBS`
 
 ## Nutzung (häufigste Commands)
-- `python tasks.py env-check` â€" zeigt SMTP/Empfänger/Profil
-- `python tasks.py verify` â€" Config/compileall/Verzeichnis-Check
+- `python tasks.py env-check` - zeigt SMTP/Empfänger/Profil
+- `python tasks.py verify` - Config/compileall/Verzeichnis-Check
 - `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`, mit `--dry-run` nur simulieren)
 - `python tasks.py mail-open` - sammelt Jobs und mailt alle offenen Jobs, die in diesem Lauf gefunden wurden (auch bereits benachrichtigte)
 - `python tasks.py tracker-sync` - synchronisiert Markierungen aus `generated/job_tracker.xlsx` in den Status
 - `python tasks.py tracker-ui` - lokale Klick-UI fuer applied/ignored/open (http://127.0.0.1:8765)
 - `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)
 - `python tasks.py mark-ignored <job_uid> [--url <link>]` - markiert Job als ignoriert (stoppt Erinnerungen)
-- `python tasks.py list` â€" sammelt und gibt Textliste + CSV aus
+- `python tasks.py list` - sammelt und gibt Textliste + CSV aus
 - `python tasks.py prepare-applications [--force-all] [--mirror-sent] [--copy-sent-dir <pfad>]` - erzeugt Anschreiben aus `data/jobs.json` (fit=="OK") in `out/`, tracked in `data/bewerbungen_tracking.csv`; optional Kopie in `04_Versendete_Bewerbungen/<Firma>/`
-- `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` â€" manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
-- `python tasks.py gen-templates` â€" aktualisiert Templates/Tracker-Header
-- `python tasks.py email-test` â€" SMTP-Test
+- `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` - manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
+- `python tasks.py gen-templates` - aktualisiert Templates/Tracker-Header
+- `python tasks.py email-test` - SMTP-Test
 
 Hinweis: `tasks.py` ist nur CLI-Entry/Dispatch; die Command-Logik liegt in `tools/commands/`.
 

@@ -4,6 +4,7 @@ Mojibake: UTF-8-Bytes wurden als Windows-1252 eingelesen und dann
 als UTF-8 zurueckgespeichert -> Umlaute erscheinen als Zeichenmuell.
 """
 import os
+import re
 
 
 def _build_mojibake_map():
@@ -58,6 +59,10 @@ def fix_file(path):
     # 2. Sonder-Unicode normalisieren
     for bad, good in NORMALIZE:
         text = text.replace(bad, good)
+
+    # 3. Halb-reparierte Mojibake-Reste: ae(U+00E2) + Euro(U+20AC) + ASCII-Satzzeichen
+    #    entsteht wenn Schritt 2 vor Schritt 1 lief und U+201x schon zu ASCII wurden
+    text = re.sub("\u00e2\u20ac[\x20-\x40\x5b-\x60\x7b-\x7e\"']", "-", text)
 
     if text != original:
         open(path, "w", encoding="utf-8", newline="").write(text)
