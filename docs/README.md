@@ -3,13 +3,13 @@
 Automatisiert Jobs sammeln -> filtern -> mailen -> Anschreiben erstellen -> Tracking pflegen. Alle Geheimnisse bleiben in `.env` (nicht im Repo).
 
 ## Finales Ziel, Stand, Roadmap
-- **AG1 Collector**: jobs.ch/jobup/Indeed + Aggregatoren (jobscout24, jobwinner, careerjet, jobrapido, monster, jora, jooble) scrapen, normalisieren, dedupen, scoren, lokal filtern; `data/jobs.json` schreiben; Mail mit allen neuen lokalen Treffern. **Status:** lÃ¤uft, Mail-Output korrekt, Hardcut auf Orte aktiv.
-- **AG2 Applicant**: `prepare-applications` liest `data/jobs.json` (fit=="OK"), fÃ¼llt DOCX-Templates, schreibt `out/`, tracked in `data/bewerbungen_tracking.csv`. **Status:** lÃ¤uft; Kopie nach `04_Versendete_Bewerbungen/<Firma>/` via `--mirror-sent`/`archive-sent`.
-- **AG3 QA/Betrieb**: README/Quickstart, env.example, verify, Scheduler (tÃ¤glich). **Status:** README aktualisiert; env.example/verify erledigt; Scheduler optional.
+- **AG1 Collector**: jobs.ch/jobup/Indeed + Aggregatoren (jobscout24, jobwinner, careerjet, jobrapido, monster, jora, jooble) scrapen, normalisieren, dedupen, scoren, lokal filtern; `data/jobs.json` schreiben; Mail mit allen neuen lokalen Treffern. **Status:** läuft, Mail-Output korrekt, Hardcut auf Orte aktiv.
+- **AG2 Applicant**: `prepare-applications` liest `data/jobs.json` (fit=="OK"), füllt DOCX-Templates, schreibt `out/`, tracked in `data/bewerbungen_tracking.csv`. **Status:** läuft; Kopie nach `04_Versendete_Bewerbungen/<Firma>/` via `--mirror-sent`/`archive-sent`.
+- **AG3 QA/Betrieb**: README/Quickstart, env.example, verify, Scheduler (täglich). **Status:** README aktualisiert; env.example/verify erledigt; Scheduler optional.
 
 **Roadmap kurz**  
 1) Kopie jeder versendeten Bewerbung nach `04_Versendete_Bewerbungen/<Firma>/...` (erledigt).  
-2) Scheduler fÃ¼r `mail-list` tÃ¤glich (optional).  
+2) Scheduler für `mail-list` täglich (optional).  
 3) Optional: feinere Pendelzeit-/PLZ-Filter.
 
 ## Quickstart (Windows / PowerShell)
@@ -27,26 +27,26 @@ if (!(Test-Path .env)) { Copy-Item .env.example .env }   # legt .env nur an, wen
 - `tests/` ? Unit-Tests
 - `scripts/` ? manuelle Hilfs- und Analyse-Skripte
 
-### .env ausfÃ¼llen (Minimal)
+### .env ausfüllen (Minimal)
 - `SENDER_EMAIL`, `SENDER_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT` (Gmail: smtp.gmail.com / 587, App-Passwort)
 - `RECIPIENT_EMAILS` (Komma-getrennt)
 - `SEARCH_LOCATIONS=Buelach` (oder nahe Orte), `LOCATION_RADIUS_KM=25`
 - Optional: `SEARCH_KEYWORDS`, `ENABLED_SOURCES`, `EMAIL_MAX_JOBS`
 
-## Nutzung (hÃ¤ufigste Commands)
-- `python tasks.py env-check` â€“ zeigt SMTP/EmpfÃ¤nger/Profil
-- `python tasks.py verify` â€“ Config/compileall/Verzeichnis-Check
+## Nutzung (häufigste Commands)
+- `python tasks.py env-check` â€" zeigt SMTP/Empfänger/Profil
+- `python tasks.py verify` â€" Config/compileall/Verzeichnis-Check
 - `python tasks.py mail-list` - sammelt Jobs, filtert auf lokale Orte, mailt neue Jobs + Erinnerungen fuer offene Jobs (Lifecycle in `generated/job_state.json`, mit `--dry-run` nur simulieren)
 - `python tasks.py mail-open` - sammelt Jobs und mailt alle offenen Jobs, die in diesem Lauf gefunden wurden (auch bereits benachrichtigte)
 - `python tasks.py tracker-sync` - synchronisiert Markierungen aus `generated/job_tracker.xlsx` in den Status
 - `python tasks.py tracker-ui` - lokale Klick-UI fuer applied/ignored/open (http://127.0.0.1:8765)
 - `python tasks.py mark-applied <job_uid> [--url <link>]` - markiert Job als angewendet (stoppt Erinnerungen)
 - `python tasks.py mark-ignored <job_uid> [--url <link>]` - markiert Job als ignoriert (stoppt Erinnerungen)
-- `python tasks.py list` â€“ sammelt und gibt Textliste + CSV aus
+- `python tasks.py list` â€" sammelt und gibt Textliste + CSV aus
 - `python tasks.py prepare-applications [--force-all] [--mirror-sent] [--copy-sent-dir <pfad>]` - erzeugt Anschreiben aus `data/jobs.json` (fit=="OK") in `out/`, tracked in `data/bewerbungen_tracking.csv`; optional Kopie in `04_Versendete_Bewerbungen/<Firma>/`
-- `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` â€“ manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
-- `python tasks.py gen-templates` â€“ aktualisiert Templates/Tracker-Header
-- `python tasks.py email-test` â€“ SMTP-Test
+- `python tasks.py archive-sent --file out/<datei>.docx [--company Firma] [--dest <pfad>]` â€" manuelles Archivieren einer versendeten Bewerbung nach `04_Versendete_Bewerbungen/`
+- `python tasks.py gen-templates` â€" aktualisiert Templates/Tracker-Header
+- `python tasks.py email-test` â€" SMTP-Test
 
 Hinweis: `tasks.py` ist nur CLI-Entry/Dispatch; die Command-Logik liegt in `tools/commands/`.
 
@@ -54,7 +54,7 @@ Hinweis: `tasks.py` ist nur CLI-Entry/Dispatch; die Command-Logik liegt in `tool
 - Standard-Orte: Buelach/Kloten/Zuerich (ASCII; per .env setzbar). Ortsfilter ist hart; mit `STRICT_LOCATION_FILTER=false` wird soft gefiltert.
 - Score/Match: Keywords/Negativliste steuern Scoring; `MIN_SCORE_MAIL` (Default 2) filtert fuer Mail.
 - Sprache: Begriffe aus `LANGUAGE_BLOCKLIST` in Titel/Raw-Title/Ort filtern Jobs heraus.
-- Anforderungen: `REQUIREMENTS_BLOCKLIST` filtert z.B. FÃ¼hrerschein-Pflicht.
+- Anforderungen: `REQUIREMENTS_BLOCKLIST` filtert z.B. Führerschein-Pflicht.
 - Mail-Body: parst jobs.ch/jobup-Multiline-Titel (Arbeitsort/Firma), zeigt Quelle/Match/Score; Soft-Cap `EMAIL_MAX_JOBS` (Default 200).
 - Lifecycle: Jobs werden in `generated/job_state.json` verwaltet (new/notified/applied/ignored/closed).
   - Tracker: `generated/job_tracker.xlsx` wird nach jedem Lauf aktualisiert (Spalte `erledigt` mit Checkbox-Symbolen, `aktion` optional).
@@ -114,7 +114,7 @@ Hinweis: `tasks.py` ist nur CLI-Entry/Dispatch; die Command-Logik liegt in `tool
 - `INCLUDE_KEYWORDS=it,helpdesk,service desk,...` - Optionaler Include-Filter (erzwingt IT-bezogene Treffer)
 - `ENABLED_SOURCES=indeed,jobs.ch,jobup.ch,jobscout24,jobwinner,careerjet,jobrapido,monster,jora,jooble` - Komma-Liste; leer = alle aktiv
 - WhatsApp Cloud API (aus, falls nicht gesetzt): `WHATSAPP_ENABLED=false`, `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID`, `WHATSAPP_TO` (bei Aktivierung wird nach `mail-list` eine Kurz-Zusammenfassung gesendet)
-- `ADAPTER_REQUEST_DELAY=0.4` - Pause zwischen Portal-Requests (gilt fÃ¼r Selenium + Requests)
+- `ADAPTER_REQUEST_DELAY=0.4` - Pause zwischen Portal-Requests (gilt für Selenium + Requests)
 - `SELENIUM_WORKERS=1` - Anzahl paralleler Selenium-Worker (empfohlen max 2-3)
 - `REQUESTS_ADAPTER_WORKERS=6` - Parallelisierung fuer Requests-Adapter (Threadpool)
 - `REQUESTS_ADAPTER_TIMEOUT=15` - Timeout je Requests-Adapter
@@ -142,13 +142,13 @@ Hinweis: `tasks.py` ist nur CLI-Entry/Dispatch; die Command-Logik liegt in `tool
 - `TRACKER_UI_DAYS=60` - Tracker-UI zeigt applied/ignored/closed nur fuer N Tage
 - `STRICT_LOCATION_FILTER=true`, `ALLOWED_LOCATION_BOOST=2` - harter Ortsfilter (mit Soft-Boost)
 - `LANGUAGE_BLOCKLIST=franzosisch,francais,french,...` - filtert Jobs mit Sprach-Anforderungen
-- `REQUIREMENTS_BLOCKLIST=fuehrerschein,kat b,...` - filtert FÃ¼hrerschein/Auto-Pflicht
-- Ã–V-Zeitfilter: `TRANSIT_ENABLED`, `TRANSIT_ORIGIN`, `TRANSIT_MAX_MINUTES`, `TRANSIT_TIME`, `TRANSIT_DATE`
+- `REQUIREMENTS_BLOCKLIST=fuehrerschein,kat b,...` - filtert Führerschein/Auto-Pflicht
+- Ã-V-Zeitfilter: `TRANSIT_ENABLED`, `TRANSIT_ORIGIN`, `TRANSIT_MAX_MINUTES`, `TRANSIT_TIME`, `TRANSIT_DATE`
 - Optional: `DETAILS_BLOCKLIST_SCAN=true` scannt Stellen-Details nach blockierten Begriffen
 - Optional: `DETAILS_BLOCKLIST_SKIP_DOMAINS=jobrapido.com,...` ueberspringt Detail-Scan fuer Domains, die blocken
 - Optional: `DETAILS_INCLUDE_SCAN=true` scannt Detailseiten auf Include-Keywords, falls Titel/Ort/Company nicht reichen
 - Optional: `DETAILS_INCLUDE_MAX_BYTES=200000`, `DETAILS_INCLUDE_MAX_JOBS=80`, `DETAILS_INCLUDE_TIMEOUT=12` - Limits fuer Include-Scan
-- Optional: `EXPAND_QUERY_VARIANTS`, `QUERY_VARIANTS_LIMIT`, `MAX_QUERY_TERMS`, `EXTRA_QUERY_TERMS` fÃ¼r breitere Suche
+- Optional: `EXPAND_QUERY_VARIANTS`, `QUERY_VARIANTS_LIMIT`, `MAX_QUERY_TERMS`, `EXTRA_QUERY_TERMS` für breitere Suche
 - Company-Career-Scan (optional): `COMPANY_CAREERS_ENABLED`, `COMPANY_CAREER_URLS`, `COMPANY_CAREER_NAMES`, `CAREER_LINK_KEYWORDS`, `CAREER_MAX_LINKS`, `CAREER_MIN_SCORE`
 
 ## Final Acceptance (Checkliste)

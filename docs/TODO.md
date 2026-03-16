@@ -63,6 +63,6 @@
 - Interaktiv starten: `python scripts/direkt_job_finder.py`
 
 ## SMTP-Hinweise
-- Gmail: `SMTP_SERVER=smtp.gmail.com`, `SMTP_PORT=587`, nutze ein App‑Passwort (2FA empfohlen).
+- Gmail: `SMTP_SERVER=smtp.gmail.com`, `SMTP_PORT=587`, nutze ein App-Passwort (2FA empfohlen).
 - Outlook/Hotmail: `SMTP_SERVER=smtp-mail.outlook.com`, `SMTP_PORT=587` und passende Absenderadresse.
-- Bei Auth-Fehlern: Passwort/Server prüfen, ggf. App‑Passwort generieren und TLS (Port 587) verwenden.
+- Bei Auth-Fehlern: Passwort/Server prüfen, ggf. App-Passwort generieren und TLS (Port 587) verwenden.

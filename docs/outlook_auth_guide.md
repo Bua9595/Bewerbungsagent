@@ -59,12 +59,12 @@ Da App-Passwords für Ihr Konto nicht verfügbar sind, verwenden wir die moderne
    - Klicken Sie auf "Erstellen"
 
 3. **Aktiviere die Gmail API:**
-   - Gehen Sie zu "APIs & Dienste" → "Bibliothek"
+   - Gehen Sie zu "APIs & Dienste" -> "Bibliothek"
    - Suchen Sie nach "Gmail API"
-   - Klicken Sie auf "Gmail API" → "Aktivieren"
+   - Klicken Sie auf "Gmail API" -> "Aktivieren"
 
 4. **Erstelle OAuth2-Anmeldedaten:**
-   - Gehen Sie zu "APIs & Dienste" → "Anmeldedaten"
+   - Gehen Sie zu "APIs & Dienste" -> "Anmeldedaten"
    - Klicken Sie auf "+ ANMELDEDATEN ERSTELLEN"
    - Wählen Sie "OAuth-Client-ID"
    - Wählen Sie "Desktop-Anwendung"
