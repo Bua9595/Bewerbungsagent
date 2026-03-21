@@ -338,6 +338,9 @@ async def run_status(_: None = Depends(require_auth)) -> JSONResponse:
         "detail_phrase_hits":      summary.get("detail_phrase_hits"),
         "after_llm":               summary.get("after_llm"),
         "digested":                summary.get("digested"),
+        "email_sent":              summary.get("email_sent"),
+        "email_new_jobs":          summary.get("email_new_jobs"),
+        "email_reminders":         summary.get("email_reminders"),
     })
 
 

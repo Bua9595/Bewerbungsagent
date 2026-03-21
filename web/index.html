@@ -653,10 +653,18 @@ async function updateRunUI() {
     }
 
     if (d.scraped != null) {
+      let emailInfo = '';
+      if (d.email_sent != null) {
+        if (d.email_sent) {
+          emailInfo = ` \u2192 \u2709 ${d.email_new_jobs} neu, ${d.email_reminders} Erinnerungen`;
+        } else if (d.email_new_jobs === 0 && d.email_reminders === 0) {
+          emailInfo = ` \u2192 Keine neuen Jobs (bereits versandt)`;
+        }
+      }
       summary.textContent =
         `Scraped: ${d.scraped} \u2192 Hard: ${d.after_hard_filter}` +
         ` \u2192 Detail: ${d.after_detail_filter} (${d.detail_phrase_hits ?? 0} geblockt)` +
-        ` \u2192 LLM: ${d.after_llm} \u2192 Digest: ${d.digested}`;
+        ` \u2192 LLM: ${d.after_llm} \u2192 Digest: ${d.digested}` + emailInfo;
     }
   } catch { /* server unreachable */ }
 }

@@ -402,7 +402,7 @@ def _step_email(
         save_state(state)
         write_tracker(state, tracker_path, tracker_rows)
 
-    return mail_sent
+    return mail_sent, len(new_jobs_recs), len(reminder_recs)
 
 
 # ---------------------------------------------------------------------------
@@ -476,7 +476,7 @@ def run(dry_run: bool = False, sources: list[str] | None = None) -> None:
         ranked = _step_final_rank(deduped)
 
         # 7. Email digest + state management
-        _step_email(ranked, dry_run=dry_run, stamp=stamp)
+        mail_sent, email_new_count, email_reminder_count = _step_email(ranked, dry_run=dry_run, stamp=stamp)
 
         _log_pipeline_summary(
             scraped=scraped_count,
@@ -504,6 +504,9 @@ def run(dry_run: bool = False, sources: list[str] | None = None) -> None:
                     "detail_phrase_hits":      detail_stats["rejected_phrase_hits"],
                     "after_llm":               len(after_llm),
                     "digested":                len(ranked),
+                    "email_sent":              mail_sent,
+                    "email_new_jobs":          email_new_count,
+                    "email_reminders":         email_reminder_count,
                     "finished_at":             datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
                 }, ensure_ascii=False, indent=2),
                 encoding="utf-8",
