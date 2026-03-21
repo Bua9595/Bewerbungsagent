@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bewerbungsagent – Konfiguration</title>
+  <style>
+    :root {
+      --bg:       #0a0e1a;
+      --surface:  #141827;
+      --surface2: #1c2235;
+      --border:   #2a3050;
+      --text:     #e2e8f0;
+      --muted:    #8892aa;
+      --accent:   #6ee7b7;
+      --danger:   #b40606;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      padding: 24px 16px 60px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    /* ---- Header ---- */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent);
+      letter-spacing: -.5px;
+    }
+    .header .subtitle {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ---- Login ---- */
+    #loginSection {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 60vh;
+      gap: 12px;
+    }
+    #loginSection h2 { color: var(--accent); margin-bottom: 4px; }
+    #loginSection .login-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px 32px;
+      width: 100%;
+      max-width: 360px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ---- Sections ---- */
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 22px;
+      margin-bottom: 20px;
+    }
+    .section h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
+      margin-bottom: 14px;
+    }
+
+    /* ---- Inputs ---- */
+    input[type="text"],
+    input[type="password"],
+    input[type="number"] {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 6px 10px;
+      font-size: 13px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    input[type="text"]:focus,
+    input[type="password"]:focus,
+    input[type="number"]:focus {
+      border-color: var(--accent);
+    }
+
+    /* ---- Buttons ---- */
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 6px 14px;
+      transition: opacity .15s, filter .15s;
+    }
+    button:hover { filter: brightness(1.1); }
+    button:active { opacity: .85; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0a0e1a;
+    }
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-danger {
+      background: var(--danger);
+      color: #0a0e1a;
+    }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+    .run-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 12px;
+      font-size: 11px; font-weight: 600; background: var(--surface2);
+      color: var(--muted); border: 1px solid var(--border);
+    }
+    .run-badge.running { background: #1a3a2a; color: var(--accent); border-color: var(--accent); }
+    .btn-logout {
+      background: transparent;
+      color: var(--muted);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      padding: 4px 10px;
+    }
+    .btn-logout:hover { color: var(--danger); border-color: var(--danger); }
+
+    /* ---- Input row ---- */
+    .input-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin: 8px 0;
+    }
+
+    /* ---- Chips ---- */
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 8px;
+      min-height: 28px;
+    }
+    .chip {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--text);
+    }
+    .chip button {
+      background: transparent;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 0 2px;
+      line-height: 1;
+      border-radius: 3px;
+    }
+    .chip button:hover { color: var(--danger); }
+
+    /* ---- Hint ---- */
+    .hint {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-top: 4px;
+      min-height: 18px;
+    }
+    .hint.error { color: var(--danger); }
+    .hint.success { color: var(--accent); }
+
+    /* ---- Sources checkboxes ---- */
+    .sources-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 4px;
+    }
+    .source-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color .15s;
+    }
+    .source-item:hover { border-color: var(--accent); }
+    .source-item input[type="checkbox"] {
+      accent-color: var(--accent);
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+    }
+
+    /* ---- Status bar ---- */
+    #statusBar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 6px 20px;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 100;
+    }
+    #statusDot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+    #statusDot.ok  { background: var(--accent); }
+    #statusDot.err { background: var(--danger); }
+
+    /* ---- Spinner ---- */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- Empty state ---- */
+    .empty-state {
+      color: var(--muted);
+      font-size: 12px;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <h1>BewerbungsagentClaude</h1>
+      <div class="subtitle">Konfiguration &amp; Einstellungen</div>
+    </div>
+    <button id="btnLogout" class="btn-logout" style="display:none;">Abmelden</button>
+  </div>
+
+  <!-- Login -->
+  <div id="loginSection" style="display:none;">
+    <div class="login-box">
+      <h2>Anmelden</h2>
+      <input id="tokenInput" type="password" placeholder="Zugriffstoken" style="width:100%;" />
+      <button id="btnLogin" class="btn-primary" style="width:100%;">Anmelden</button>
+      <div id="loginError" class="hint error"></div>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <div id="appSection" style="display:none;">
+
+    <!-- Locations -->
+    <div class="section">
+      <h3>Standorte</h3>
+      <div id="locChipsContainer" class="chip-group"></div>
+      <div class="input-row">
+        <input id="locAddInput" type="text" placeholder="Ort hinzufügen… (z.B. Zürich)" style="width:200px;" />
+        <input id="locRadiusInput" type="number" min="0" max="100" value="0"
+               placeholder="Radius km" style="width:90px;" title="0 = nur dieser Ort" />
+        <span style="color:var(--muted);font-size:.8rem;">km</span>
+        <button id="btnLocAdd" class="btn-secondary btn-sm">Hinzufügen</button>
+        <button id="btnLocClear" class="btn-danger btn-sm">Alle löschen</button>
+      </div>
+      <div class="hint" id="locMessage"></div>
+    </div>
+
+    <!-- Keywords -->
+    <div class="section">
+      <h3>Suchbegriffe</h3>
+      <div id="kwChipsContainer" class="chip-group"></div>
+      <div class="input-row">
+        <input id="kwAddInput" type="text" placeholder="Suchbegriff hinzufügen…" style="width:220px;" />
+        <button id="btnKwAdd" class="btn-secondary btn-sm">Hinzufügen</button>
+        <button id="btnKwClear" class="btn-danger btn-sm">Alle löschen</button>
+      </div>
+      <div class="hint" id="kwMessage"></div>
+    </div>
+
+    <!-- Sources -->
+    <div class="section">
+      <h3>Quellen</h3>
+      <div class="sources-grid" id="sourcesGrid"></div>
+      <div class="hint" id="srcMessage"></div>
+    </div>
+
+    <!-- Pipeline Runner -->
+    <div class="section">
+      <h3>Pipeline</h3>
+      <div class="input-row" style="align-items:center;gap:12px;">
+        <button id="btnRunPipeline" class="btn-primary">Scraper jetzt starten</button>
+        <span id="runBadge" class="run-badge">–</span>
+      </div>
+      <div class="hint" id="runMsg"></div>
+      <div class="hint" id="runLastInfo" style="margin-top:4px;color:var(--muted);font-size:11px;"></div>
+      <div class="hint" id="runSummary" style="margin-top:4px;color:var(--muted);font-size:11px;"></div>
+      <div class="hint error" id="runError" style="margin-top:4px;font-size:11px;display:none;"></div>
+    </div>
+
+  </div><!-- /appSection -->
+</div><!-- /container -->
+
+<!-- Status bar -->
+<div id="statusBar">
+  <div id="statusDot"></div>
+  <span id="statusText">Initialisierung…</span>
+</div>
+
+<script>
+/* =========================================================
+   Constants
+   ========================================================= */
+const STORAGE_KEY = 'bwa_token';
+const API_BASE = 'http://localhost:8765';
+const KNOWN_SOURCES = ['jobs.ch', 'jobup.ch', 'jobscout24', 'monster', 'ictjobs.ch', 'swissdevjobs.ch', 'ictcareer.ch', 'itjobs.ch', 'jobwinner', 'myitjob.ch'];
+
+/* =========================================================
+   Preferences API helpers
+   ========================================================= */
+async function getPreferences() {
+  const res = await fetch(`${API_BASE}/preferences`, {
+    headers: { 'Authorization': `Bearer ${localStorage.getItem(STORAGE_KEY)}` }
+  });
+  return res.json();
+}
+
+async function setPreferences(include_keywords, locations, sources) {
+  await fetch(`${API_BASE}/preferences`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${localStorage.getItem(STORAGE_KEY)}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ include_keywords, locations, sources })
+  });
+}
+
+/* =========================================================
+   Status bar
+   ========================================================= */
+function setStatus(msg, state /* 'ok' | 'err' | '' */) {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = state || '';
+  txt.textContent = msg;
+}
+
+/* =========================================================
+   Chip renderer
+   ========================================================= */
+function renderChips(container, items, onRemove) {
+  container.innerHTML = '';
+  if (!items || items.length === 0) {
+    const empty = document.createElement('span');
+    empty.className = 'empty-state';
+    empty.textContent = 'Keine Einträge';
+    container.appendChild(empty);
+    return;
+  }
+  for (const item of items) {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+
+    const label = document.createTextNode(item);
+    chip.appendChild(label);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '×';
+    btn.title = `"${item}" entfernen`;
+    btn.addEventListener('click', () => onRemove(item));
+    chip.appendChild(btn);
+
+    container.appendChild(chip);
+  }
+}
+
+/* =========================================================
+   Load & render
+   ========================================================= */
+async function loadAndRender() {
+  setStatus('Lade Einstellungen…', '');
+  try {
+    const prefs = await getPreferences();
+
+    // Locations
+    renderChips(
+      document.getElementById('locChipsContainer'),
+      prefs.locations || [],
+      async (removed) => {
+        const p = await getPreferences();
+        const updated = (p.locations || []).filter(l => l !== removed);
+        await setPreferences(p.include_keywords || [], updated, p.sources || null);
+        await loadAndRender();
+      }
+    );
+
+    // Keywords
+    renderChips(
+      document.getElementById('kwChipsContainer'),
+      prefs.include_keywords || [],
+      async (removed) => {
+        const p = await getPreferences();
+        const updated = (p.include_keywords || []).filter(k => k !== removed);
+        await setPreferences(updated, p.locations || [], p.sources || null);
+        await loadAndRender();
+      }
+    );
+
+    // Sources checkboxes
+    renderSources(prefs.sources || []);
+
+    setStatus('Einstellungen geladen', 'ok');
+  } catch (err) {
+    console.error('loadAndRender error:', err);
+    setStatus('Fehler beim Laden der Einstellungen', 'err');
+  }
+}
+
+/* =========================================================
+   Sources
+   ========================================================= */
+function renderSources(enabledSources) {
+  const grid = document.getElementById('sourcesGrid');
+  grid.innerHTML = '';
+  const enabledSet = new Set(enabledSources.map(s => s.toLowerCase()));
+
+  for (const src of KNOWN_SOURCES) {
+    const label = document.createElement('label');
+    label.className = 'source-item';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = enabledSet.has(src.toLowerCase());
+    cb.addEventListener('change', async () => {
+      const msg = document.getElementById('srcMessage');
+      msg.textContent = 'Speichere…';
+      try {
+        const prefs = await getPreferences();
+        const current = new Set((prefs.sources || []).map(s => s.toLowerCase()));
+        if (cb.checked) {
+          current.add(src.toLowerCase());
+        } else {
+          current.delete(src.toLowerCase());
+        }
+        // Preserve original casing for KNOWN_SOURCES, fallback to lowercase for others
+        const allSources = KNOWN_SOURCES.filter(s => current.has(s.toLowerCase()));
+        await setPreferences(prefs.include_keywords || [], prefs.locations || [], allSources);
+        msg.textContent = `Quelle "${src}" ${cb.checked ? 'aktiviert' : 'deaktiviert'}.`;
+        setStatus('Gespeichert', 'ok');
+      } catch (err) {
+        msg.className = 'hint error';
+        msg.textContent = 'Fehler beim Speichern.';
+        console.error(err);
+      }
+    });
+
+    label.appendChild(cb);
+    label.appendChild(document.createTextNode(src));
+    grid.appendChild(label);
+  }
+}
+
+/* =========================================================
+   Location: add with optional radius
+   ========================================================= */
+async function doAddLocation() {
+  const input = document.getElementById('locAddInput');
+  const radiusInput = document.getElementById('locRadiusInput');
+  const msg = document.getElementById('locMessage');
+  const val = (input.value || '').trim();
+  if (!val) return;
+
+  const radius = Math.max(0, Math.min(100, parseInt(radiusInput?.value || '0', 10) || 0));
+  let toAdd = [val];
+
+  msg.className = 'hint';
+
+  if (radius > 0) {
+    msg.textContent = `Suche Orte im Umkreis von ${radius} km…`;
+    // show spinner
+    const spinner = document.createElement('span');
+    spinner.className = 'spinner';
+    msg.appendChild(spinner);
+
+    try {
+      const res = await fetch(
+        `${API_BASE}/locations/nearby?q=${encodeURIComponent(val)}&radius_km=${radius}`,
+        { headers: { 'Authorization': `Bearer ${localStorage.getItem(STORAGE_KEY)}` } }
+      );
+      const data = await res.json();
+      if (Array.isArray(data.locations) && data.locations.length) {
+        toAdd = data.locations;
+        msg.textContent = `${toAdd.length} Orte im ${radius} km Umkreis hinzugefügt.`;
+      } else {
+        msg.textContent = 'Keine Orte gefunden — nur der eingegebene Ort wird verwendet.';
+      }
+    } catch {
+      msg.textContent = 'Radius-Suche fehlgeschlagen — nur der Ort wird hinzugefügt.';
+    }
+  } else {
+    msg.textContent = '';
+  }
+
+  // Merge into existing
+  const prefs = await getPreferences();
+  const existing = new Set((prefs.locations || []).map(l => String(l).toLowerCase()));
+  const updated = [...(prefs.locations || [])];
+  for (const loc of toAdd) {
+    const normalized = String(loc || '').trim();
+    if (!normalized) continue;
+    if (!existing.has(normalized.toLowerCase())) {
+      updated.push(normalized);
+      existing.add(normalized.toLowerCase());
+    }
+  }
+
+  await setPreferences(prefs.include_keywords || [], updated, prefs.sources || null);
+  input.value = '';
+  if (radiusInput) radiusInput.value = '0';
+  await loadAndRender();
+}
+
+/* =========================================================
+   Keyword: add
+   ========================================================= */
+async function doAddKeyword() {
+  const input = document.getElementById('kwAddInput');
+  const msg = document.getElementById('kwMessage');
+  const val = (input.value || '').trim();
+  if (!val) return;
+
+  msg.className = 'hint';
+  msg.textContent = 'Speichere…';
+  try {
+    const prefs = await getPreferences();
+    const existing = new Set((prefs.include_keywords || []).map(k => k.toLowerCase()));
+    const updated = [...(prefs.include_keywords || [])];
+    if (!existing.has(val.toLowerCase())) {
+      updated.push(val);
+    }
+    await setPreferences(updated, prefs.locations || [], prefs.sources || null);
+    input.value = '';
+    msg.textContent = '';
+    await loadAndRender();
+  } catch (err) {
+    msg.className = 'hint error';
+    msg.textContent = 'Fehler beim Speichern.';
+    console.error(err);
+  }
+}
+
+/* =========================================================
+   Auth helpers
+   ========================================================= */
+function showLogin() {
+  document.getElementById('loginSection').style.display = 'flex';
+  document.getElementById('appSection').style.display = 'none';
+  document.getElementById('btnLogout').style.display = 'none';
+  setStatus('Nicht angemeldet', '');
+}
+
+function showApp() {
+  document.getElementById('loginSection').style.display = 'none';
+  document.getElementById('appSection').style.display = 'block';
+  document.getElementById('btnLogout').style.display = 'inline-block';
+  updateRunUI();
+}
+
+/* =========================================================
+   Pipeline runner
+   ========================================================= */
+let _pollTimer = null;
+
+async function updateRunUI() {
+  try {
+    const res = await fetch(`${API_BASE}/run/status`, {
+      headers: { 'Authorization': `Bearer ${localStorage.getItem(STORAGE_KEY)}` }
+    });
+    const d = await res.json();
+    const badge   = document.getElementById('runBadge');
+    const btn     = document.getElementById('btnRunPipeline');
+    const info    = document.getElementById('runLastInfo');
+    const summary = document.getElementById('runSummary');
+    const errEl   = document.getElementById('runError');
+
+    if (d.running) {
+      badge.textContent = 'Läuft\u2026'; badge.className = 'run-badge running';
+      btn.disabled = true; btn.textContent = 'Läuft\u2026';
+      if (!_pollTimer) _pollTimer = setInterval(updateRunUI, 5000);
+    } else {
+      badge.textContent = 'Bereit'; badge.className = 'run-badge';
+      btn.disabled = false; btn.textContent = 'Scraper jetzt starten';
+      if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    }
+
+    if (d.last_finished_at) {
+      const ts   = d.last_finished_at.replace('T', ' ').slice(0, 19) + ' UTC';
+      const code = d.last_exit_code === 0 ? 'OK' : `Fehler (Code ${d.last_exit_code})`;
+      info.textContent = `Letzter Abschluss: ${ts} \u2014 ${code}`;
+    }
+
+    if (d.last_error && d.last_exit_code !== 0) {
+      errEl.textContent = `Fehler: ${d.last_error}`; errEl.style.display = '';
+    } else {
+      errEl.style.display = 'none';
+    }
+
+    if (d.scraped != null) {
+      summary.textContent =
+        `Scraped: ${d.scraped} \u2192 Hard: ${d.after_hard_filter}` +
+        ` \u2192 Detail: ${d.after_detail_filter} (${d.detail_phrase_hits ?? 0} geblockt)` +
+        ` \u2192 LLM: ${d.after_llm} \u2192 Digest: ${d.digested}`;
+    }
+  } catch { /* server unreachable */ }
+}
+
+async function doRunPipeline() {
+  const msg = document.getElementById('runMsg');
+  msg.className = 'hint'; msg.textContent = 'Starte\u2026';
+  document.getElementById('btnRunPipeline').disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/run/start`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${localStorage.getItem(STORAGE_KEY)}` }
+    });
+    const d = await res.json();
+    if (d.status === 'started') {
+      msg.className = 'hint success';
+      msg.textContent = `Gestartet (PID ${d.pid}). Log: generated/web_run.log`;
+      // Manually set running state — subprocess hasn't written lock file yet
+      document.getElementById('runBadge').textContent = 'Läuft\u2026';
+      document.getElementById('runBadge').className = 'run-badge running';
+      if (!_pollTimer) _pollTimer = setInterval(updateRunUI, 5000);
+      // First poll after delay to let subprocess acquire lock
+      setTimeout(updateRunUI, 3000);
+    } else if (d.status === 'already_running') {
+      msg.className = 'hint';
+      msg.textContent = `Läuft bereits (PID ${d.pid}).`;
+      updateRunUI();
+    } else {
+      msg.className = 'hint error';
+      msg.textContent = d.error || 'Unbekannter Fehler.';
+      document.getElementById('btnRunPipeline').disabled = false;
+    }
+  } catch {
+    msg.className = 'hint error'; msg.textContent = 'Server nicht erreichbar.';
+    document.getElementById('btnRunPipeline').disabled = false;
+  }
+}
+
+async function tryLogin() {
+  const token = document.getElementById('tokenInput').value.trim();
+  const err = document.getElementById('loginError');
+  if (!token) { err.textContent = 'Bitte Token eingeben.'; return; }
+
+  err.textContent = '';
+  setStatus('Prüfe Token…', '');
+
+  try {
+    const res = await fetch(`${API_BASE}/preferences`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      localStorage.setItem(STORAGE_KEY, token);
+      showApp();
+      await loadAndRender();
+    } else if (res.status === 401) {
+      err.textContent = 'Ungültiger Token.';
+      setStatus('Authentifizierung fehlgeschlagen', 'err');
+    } else {
+      err.textContent = `Server-Fehler: ${res.status}`;
+      setStatus('Server-Fehler', 'err');
+    }
+  } catch {
+    err.textContent = 'Server nicht erreichbar.';
+    setStatus('Verbindungsfehler', 'err');
+  }
+}
+
+/* =========================================================
+   Init
+   ========================================================= */
+async function init() {
+  const token = localStorage.getItem(STORAGE_KEY);
+  if (!token) {
+    showLogin();
+    return;
+  }
+
+  // Validate stored token
+  try {
+    const res = await fetch(`${API_BASE}/preferences`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (res.ok) {
+      showApp();
+      await loadAndRender();
+    } else {
+      localStorage.removeItem(STORAGE_KEY);
+      showLogin();
+    }
+  } catch {
+    // Server unreachable but token exists – show app anyway, errors shown on load
+    showApp();
+    setStatus('Server nicht erreichbar', 'err');
+  }
+}
+
+/* =========================================================
+   Event listeners
+   ========================================================= */
+document.addEventListener('DOMContentLoaded', () => {
+  // Login
+  document.getElementById('btnLogin').addEventListener('click', tryLogin);
+  document.getElementById('tokenInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') tryLogin();
+  });
+
+  // Logout
+  document.getElementById('btnLogout').addEventListener('click', () => {
+    localStorage.removeItem(STORAGE_KEY);
+    document.getElementById('tokenInput').value = '';
+    document.getElementById('loginError').textContent = '';
+    showLogin();
+  });
+
+  // Location add
+  document.getElementById('btnLocAdd').addEventListener('click', doAddLocation);
+  document.getElementById('locAddInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doAddLocation();
+  });
+
+  // Location clear all
+  document.getElementById('btnLocClear').addEventListener('click', async () => {
+    const msg = document.getElementById('locMessage');
+    msg.className = 'hint';
+    msg.textContent = 'Lösche alle Standorte…';
+    try {
+      const prefs = await getPreferences();
+      await setPreferences(prefs.include_keywords || [], [], prefs.sources || null);
+      msg.textContent = 'Alle Standorte gelöscht.';
+      await loadAndRender();
+    } catch (err) {
+      msg.className = 'hint error';
+      msg.textContent = 'Fehler beim Löschen.';
+      console.error(err);
+    }
+  });
+
+  // Keyword add
+  document.getElementById('btnKwAdd').addEventListener('click', doAddKeyword);
+  document.getElementById('kwAddInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') doAddKeyword();
+  });
+
+  // Keyword clear all
+  document.getElementById('btnKwClear').addEventListener('click', async () => {
+    const msg = document.getElementById('kwMessage');
+    msg.className = 'hint';
+    msg.textContent = 'Lösche alle Suchbegriffe…';
+    try {
+      const prefs = await getPreferences();
+      await setPreferences([], prefs.locations || [], prefs.sources || null);
+      msg.textContent = 'Alle Suchbegriffe gelöscht.';
+      await loadAndRender();
+    } catch (err) {
+      msg.className = 'hint error';
+      msg.textContent = 'Fehler beim Löschen.';
+      console.error(err);
+    }
+  });
+
+  // Pipeline
+  document.getElementById('btnRunPipeline').addEventListener('click', doRunPipeline);
+
+  // Start
+  init();
+});
+</script>
+</body>
+</html>

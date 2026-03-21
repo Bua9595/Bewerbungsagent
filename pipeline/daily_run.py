@@ -134,9 +134,33 @@ def _release_lock(path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def _step_collect(sources: list[str] | None) -> list:
-    from bewerbungsagent.job_collector import collect_jobs
+    from bewerbungsagent.job_collector import collect_jobs, Job
+
+    # collect_jobs() handles per-source errors internally (try/except per adapter).
+    # A KeyboardInterrupt or SystemExit will still propagate – that is intentional.
     jobs = collect_jobs(sources=sources or None)
-    log.info(f"[1/7] collect: {len(jobs)} jobs scraped")
+
+    # Validate return type so any future regression is immediately visible.
+    if not isinstance(jobs, list):
+        log.error(
+            f"[1/7] collect: unexpected return type {type(jobs).__name__!r} "
+            f"from collect_jobs() – expected list. Treating as empty."
+        )
+        return []
+
+    job_count = len(jobs)
+    log.info(f"[1/7] collect: {job_count} jobs after internal collect_jobs() filtering")
+
+    if job_count == 0:
+        log.warning(
+            "       collect returned 0 jobs. Common causes:\n"
+            "       • DETAILS_BLOCKLIST_SCAN=true + overly broad REQUIREMENTS_BLOCKLIST\n"
+            "         (e.g. 'jahre berufserfahrung' appears in every CH job posting)\n"
+            "       • HARD_ALLOWED_LOCATIONS too restrictive\n"
+            "       • INCLUDE_KEYWORDS not matching scraped titles\n"
+            "       → Set FILTER_STATS=true in .env and re-run to see exact drop reasons."
+        )
+
     return jobs
 
 
@@ -437,6 +461,11 @@ def run(dry_run: bool = False, sources: list[str] | None = None) -> None:
         kept, rejected_hard = _step_hard_filter(normalized)
         after_hard_count = len(kept)
 
+        # 3b. Detail-page hard-phrase filter (runs on candidates only, fetches detail URLs)
+        from pipeline.detail_filter import detail_filter  # noqa: PLC0415
+        kept, detail_rejected, detail_stats = detail_filter(kept)
+        after_detail_count = len(kept)
+
         # 4. LLM review (also rejects obvious mismatches)
         after_llm = _step_llm_review(kept)
 
@@ -459,6 +488,28 @@ def run(dry_run: bool = False, sources: list[str] | None = None) -> None:
             rejected_hard=len(rejected_hard),
             dry_run=dry_run,
         )
+
+        # Write summary for web UI status endpoint
+        try:
+            summary_path = _PROJECT_ROOT / "generated" / "pipeline_summary.json"
+            summary_path.parent.mkdir(parents=True, exist_ok=True)
+            summary_path.write_text(
+                json.dumps({
+                    "scraped":                 scraped_count,
+                    "after_hard_filter":       after_hard_count,
+                    "after_detail_filter":     after_detail_count,
+                    "detail_skipped_domain":   detail_stats["skipped_domain"],
+                    "detail_fetch_failed":     detail_stats["fetch_failed"],
+                    "detail_cap_reached":      detail_stats["cap_reached"],
+                    "detail_phrase_hits":      detail_stats["rejected_phrase_hits"],
+                    "after_llm":               len(after_llm),
+                    "digested":                len(ranked),
+                    "finished_at":             datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+                }, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as _summary_exc:
+            log.debug("pipeline_summary.json write failed: %s", _summary_exc)
 
     except Exception as exc:
         log.exception(f"Pipeline failed with unexpected error: {exc}")

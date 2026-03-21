@@ -29,7 +29,13 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+# webdriver_manager kept as optional fallback; primary driver discovery uses
+# selenium's built-in selenium-manager to avoid Windows Smart App Control blocks
+# on freshly-downloaded binaries in ~/.wdm/
+try:
+    from webdriver_manager.chrome import ChromeDriverManager as _ChromeDriverManager
+except ImportError:
+    _ChromeDriverManager = None  # type: ignore
 
 from .config import config
 from .logger import job_logger
@@ -79,6 +85,8 @@ def _mk_driver(headless: bool = True) -> webdriver.Chrome:
         opts.add_argument("--headless=new")
         opts.add_argument("--disable-gpu")
     opts.add_argument("--no-sandbox")
+    opts.add_argument("--disable-dev-shm-usage")
+    opts.add_argument("--disable-extensions")
     opts.add_argument("--window-size=1200,2000")
     opts.add_argument("--user-agent=Bewerbungsagent/1.0 (+job-collector)")
     opts.add_argument("--lang=de-CH,de;q=0.9")
@@ -87,7 +95,19 @@ def _mk_driver(headless: bool = True) -> webdriver.Chrome:
     opts.add_argument("--disable-features=WebGPU")
     opts.add_experimental_option("excludeSwitches", ["enable-logging"])
 
-    service = Service(ChromeDriverManager().install())
+    # Driver discovery order:
+    # 1. CHROMEDRIVER_PATH env var (manually specified, already trusted binary)
+    # 2. selenium-manager built into selenium package (avoids ~/.wdm/ downloads
+    #    that Windows Smart App Control may block as unsigned internet-downloads)
+    # 3. webdriver_manager fallback (legacy, downloads to ~/.wdm/)
+    driver_path = os.getenv("CHROMEDRIVER_PATH", "").strip()
+    if driver_path:
+        service = Service(driver_path)
+    else:
+        # Service() with no path → selenium-manager auto-discovers/downloads
+        # chromedriver into %LOCALAPPDATA%\selenium\ which avoids SAC issues
+        service = Service()
+
     driver = webdriver.Chrome(service=service, options=opts)
 
     try:
