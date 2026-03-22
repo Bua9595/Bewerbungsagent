@@ -187,9 +187,14 @@ def llm_review_jobs(jobs: List[NormalizedJob], logger=None) -> List[NormalizedJo
         if logger:
             logger.info(f"llm_review: batch call returned {len(reviews)} reviews for {len(jobs_to_review)} jobs")
     except Exception as exc:
-        if logger:
-            logger.warning(f"llm_review: batch API call failed: {exc}. Using fallback for all.")
-        reviews = [dict(_FALLBACK_REVIEW, reason_short=f"llm_error:{type(exc).__name__}") for _ in jobs_to_review]
+        exc_str = str(exc)
+        if "credit balance" in exc_str or "insufficient_quota" in exc_str or "402" in exc_str:
+            if logger:
+                logger.info("llm_review: no API credits — skipping LLM review, using fallback scores")
+        else:
+            if logger:
+                logger.warning(f"llm_review: batch API call failed: {exc}. Using fallback for all.")
+        reviews = [dict(_FALLBACK_REVIEW, reason_short="llm_skipped") for _ in jobs_to_review]
 
     # Apply reviews
     rejected_by_llm = 0
